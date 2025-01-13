@@ -4,4 +4,19 @@ A zig serailization library which allows for simple automatic and custom seriali
 
 The following types are currently supported/planned:
 
-TODO
+- [x] Bool
+- [ ] Float
+- [ ] Int
+- [ ] Optional
+- [ ] Enum
+- [ ] Union
+- [ ] Struct
+- [ ] StructPacked
+- [ ] Array
+- [ ] Slice
+- [ ] String
+- [ ] PointerSingle
+- [ ] ArrayList
+- [ ] ArrayListUnmanaged
+- [ ] HashMap
+- [ ] HashMapUnmanaged
