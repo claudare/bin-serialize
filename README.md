@@ -12,7 +12,7 @@ The following types are currently supported/planned:
 - [x] Union
 - [x] Struct
 - [x] StructPacked
-- [ ] Array
+- [x] Array
 - [ ] Slice
 - [ ] String
 - [ ] PointerSingle

@@ -432,6 +432,42 @@ test "struct packed" {
     try testing.expectEqual(.z, res.b);
 }
 
+pub inline fn readArray(self: *Self, comptime T: type) anyerror!T {
+    //
+    const arrayInfo = @typeInfo(T).Array;
+
+    var result: T = undefined;
+    var i: usize = 0;
+    while (i < arrayInfo.len) : (i += 1) {
+        result[i] = try self.readAny(arrayInfo.child);
+    }
+
+    // this cant be used for some reason instead:
+    // inline for (0..arrayInfo.len) |i| {
+    //     result[i] == try self.readAny(arrayInfo.child);
+    // }
+    return result;
+}
+
+test readArray {
+    const ArrayType = [2]u64;
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(u64, 123, test_config.endian); // a value
+    try rw.writer().writeInt(u64, 80, test_config.endian); // b value
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    const res = try reader.readArray(ArrayType);
+    try testing.expectEqual(2, res.len);
+    try testing.expectEqual(123, res[0]);
+    try testing.expectEqual(80, res[1]);
+}
+
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
 //     return struct {
 
@@ -457,25 +493,6 @@ test "struct packed" {
 //                 .HashMapUnmanaged => |KV| self.readHashMapUnmanaged(KV.K, KV.V),
 //                 // else => @compileError("type " ++ @typeName(T) ++ " is not yet implemented"),
 //             };
-//         }
-
-//         /// This is for reading of the arrays with fixed sizes
-//         /// pretty rare! for dynamic slices, use ArrayList
-//         pub inline fn readArray(self: *Self, comptime T: type) anyerror!T {
-//             //
-//             const arrayInfo = @typeInfo(T).Array;
-
-//             var result: T = undefined;
-//             var i: usize = 0;
-//             while (i < arrayInfo.len) : (i += 1) {
-//                 result[i] = try self.readAny(arrayInfo.child);
-//             }
-
-//             // this cant be used for some reason instead:
-//             // inline for (0..arrayInfo.len) |i| {
-//             //     result[i] == try self.readAny(arrayInfo.child);
-//             // }
-//             return result;
 //         }
 
 //         // this a single pointer!
@@ -574,35 +591,6 @@ test "struct packed" {
 // }
 
 // TODO: REFACTOR ALL THESE
-
-// test "array" {
-//     const ArrayT = [2]u64;
-
-//     const a = testing.allocator;
-//     var buff: [100]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     try rw.writer().writeInt(u64, 123, test_config.endian); // a value
-//     try rw.writer().writeInt(u64, 80, test_config.endian); // b value
-
-//     var reader = binReader(a, rw.reader(), test_config);
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readArray(ArrayT);
-//         try testing.expectEqual(2, res.len);
-//         try testing.expectEqual(123, res[0]);
-//         try testing.expectEqual(80, res[1]);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readAny(ArrayT);
-//         try testing.expectEqual(2, res.len);
-//         try testing.expectEqual(123, res[0]);
-//         try testing.expectEqual(80, res[1]);
-//     }
-// }
 
 // test "string" {
 //     const a = testing.allocator;
