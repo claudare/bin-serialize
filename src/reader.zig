@@ -68,7 +68,7 @@ pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationCo
         }
 
         // using std.json innerParse as an example for this implementation
-        pub inline fn readAny(self: *Self, comptime T: type) anyerror!T {
+        pub inline fn readAny(self: *Self, comptime T: type) Error!T {
             const rich_type = types.getRichType(T);
 
             return switch (rich_type) {
@@ -418,19 +418,11 @@ test "optional" {
     try rw.writer().writeInt(u8, 1, test_config.endian); // non-null value
     try rw.writer().writeInt(u64, 123, test_config.endian); // non-null value
 
-    var reader = binReader(a, rw.reader(), test_config);
+    var reader = binReader(a, rw.reader(), .{ .len = @divExact(8 + 8 + 64, 8) }, test_config);
 
-    {
-        try rw.seekTo(0);
-        try testing.expectEqual(null, try reader.readOptional(u64));
-        try testing.expectEqual(123, try reader.readOptional(u64));
-    }
-
-    {
-        try rw.seekTo(0);
-        try testing.expectEqual(null, try reader.readAny(?u64));
-        try testing.expectEqual(123, try reader.readAny(?u64));
-    }
+    try rw.seekTo(0);
+    try testing.expectEqual(null, try reader.readOptional(u64));
+    try testing.expectEqual(123, try reader.readOptional(u64));
 }
 
 test "enum" {

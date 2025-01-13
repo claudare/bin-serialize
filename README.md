@@ -7,7 +7,7 @@ The following types are currently supported/planned:
 - [x] Bool
 - [x] Float
 - [x] Int
-- [ ] Optional
+- [x] Optional
 - [ ] Enum
 - [ ] Union
 - [ ] Struct
