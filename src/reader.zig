@@ -467,6 +467,32 @@ test "enum non-exhaustive" {
     try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
 }
 
+test "enum with custom function" {
+    const EnumType = enum(u8) {
+        a,
+        b,
+        // oh boy, this is, in my humble opinion, a rough side of zig
+        // its not possible to type it, and using anytype is very hard.
+        // major refactor must be done soon, to use AnyReader interface...
+        pub fn deserialize(allocator: Allocator, BinReader(???, ???)) void {
+
+        }
+    };
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(u8, 0, test_config.endian);
+    try rw.writer().writeInt(u8, 1, test_config.endian);
+
+    var reader = binReader(a, rw.reader(), .{ .len = 2 }, test_config);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
+    try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
+}
+
 test "union" {
     const UnionType = union(enum(u16)) { a: u64, b: ?u32, c: void };
 
