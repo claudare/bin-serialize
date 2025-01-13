@@ -433,7 +433,6 @@ test "struct packed" {
 }
 
 pub inline fn readArray(self: *Self, comptime T: type) anyerror!T {
-    //
     const arrayInfo = @typeInfo(T).Array;
 
     var result: T = undefined;
@@ -466,6 +465,58 @@ test readArray {
     try testing.expectEqual(2, res.len);
     try testing.expectEqual(123, res[0]);
     try testing.expectEqual(80, res[1]);
+}
+
+/// caller owns memory
+/// Array will be deinitialized on failure
+/// TODO: each item must be deinited automatically as well when error occurs
+pub inline fn readSlice(self: *Self, comptime T: type) anyerror![]T {
+    var array_list = try self.readArrayListUnmanaged(T);
+    return array_list.toOwnedSlice();
+}
+
+test readSlice {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(test_config.SliceLenType(), 2, test_config.endian);
+    try rw.writer().writeInt(u16, 123, test_config.endian);
+    try rw.writer().writeInt(u16, 42, test_config.endian);
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    const res = try reader.readSlice(u16);
+    defer a.free(res);
+    try testing.expectEqual(2, res.len);
+    try testing.expectEqual(res[0], 123);
+    try testing.expectEqual(res[1], 42);
+}
+
+/// Array will be deinitialized on failure
+/// TODO: each item must be deinited automatically as well when error occurs
+pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) anyerror!std.ArrayListUnmanaged(T) {
+    // woops... this must be comptime known, so the ser_config actually needs to be comptime
+    // but then each struct MUST provide a correct SliceLenType to the underlying type
+    // which makes the use of this library non-portable, or make it depend on some external module...
+    const LenT = self.ser_config.SliceLenType();
+
+    const len = try self.readInt(LenT);
+
+    // it would be nice to calculate the maximum allowed size from the bytes remaining
+    // this is only possible for single non-complex type
+    // optionals and union(enum) make the calculation impossible
+
+    var unmanaged = try std.ArrayListUnmanaged(T).initCapacity(self.allocator, len);
+    errdefer unmanaged.deinit(self.allocator);
+
+    for (0..len) |_| {
+        const v = try self.readAny(T);
+        unmanaged.appendAssumeCapacity(v);
+    }
+
+    return unmanaged;
 }
 
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
@@ -530,26 +581,6 @@ test readArray {
 //             return list.toOwnedSlice();
 //         }
 
-//         /// caller owns memory
-//         /// TODO: each item be deinited as well when error occurs
-//         pub inline fn readSlice(self: *Self, comptime T: type) anyerror![]T {
-//             var array_list = try self.readArrayListUnmanaged(T);
-//             return array_list.toOwnedSlice();
-//         }
-
-//         pub inline fn readArrayListUnmanaged(self: *Self, comptime TItem: type) anyerror!std.ArrayListUnmanaged(TItem) {
-//             const len = try self.readInt(ser_config.SliceLenType);
-//             // what if I want unmanaged?
-//             var unmanaged = try std.ArrayListUnmanaged(TItem).initCapacity(self.allocator, len);
-//             errdefer unmanaged.deinit(self.allocator);
-
-//             for (0..len) |_| {
-//                 const v = try self.readAny(TItem);
-//                 unmanaged.appendAssumeCapacity(v);
-//             }
-
-//             return unmanaged;
-//         }
 //         /// This is a public function which the developer uses when manually encoding
 //         /// this takes in a type of item, but then we loose the ability to construct it
 //         /// upto the specifications
@@ -600,7 +631,7 @@ test readArray {
 //     try rw.writer().writeInt(test_config.SliceLenType, 11, test_config.endian);
 //     _ = try rw.writer().write("hello world");
 
-//     var reader = binReader(a, rw.reader(), test_config);
+//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
 
 //     {
 //         try rw.seekTo(0);
@@ -647,7 +678,7 @@ test readArray {
 
 //     try rw.writer().writeInt(u64, 123, test_config.endian);
 
-//     var reader = binReader(a, rw.reader(), test_config);
+//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
 
 //     {
 //         const OuterT = struct { a: *struct { b: u64 } };
@@ -688,7 +719,7 @@ test readArray {
 //     try rw.writer().writeInt(u64, 200, test_config.endian);
 //     try rw.writer().writeInt(u64, 201, test_config.endian);
 
-//     var reader = binReader(a, rw.reader(), test_config);
+//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
 
 //     {
 //         try rw.seekTo(0);
@@ -746,7 +777,7 @@ test readArray {
 //         try rw.writer().writeInt(u64, 20, test_config.endian);
 //     }
 
-//     var reader = binReader(a, rw.reader(), test_config);
+//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
 
 //     {
 //         try rw.seekTo(0);

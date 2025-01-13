@@ -13,13 +13,13 @@ pub const ConfigSerialization = struct {
     pub fn SliceLenType(self: ConfigSerialization) type {
         // temprary check for now
 
-        if (@rem(self.sliceLenSize, 8) != 0) {
+        if (@rem(self.slice_len_bitsize, 8) != 0) {
             @compileError("slice encoding type must be divisible by 8. Instead got " ++ self.sliceLenSize());
         }
 
         return comptime @Type(.{
             .Int = .{
-                .bits = self.sliceLenSize,
+                .bits = self.slice_len_bitsize,
                 .signedness = .unsigned,
             },
         });
