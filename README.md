@@ -9,7 +9,7 @@ The following types are currently supported/planned:
 - [x] Int
 - [x] Optional
 - [x] Enum
-- [ ] Union
+- [x] Union
 - [ ] Struct
 - [ ] StructPacked
 - [ ] Array

@@ -301,54 +301,57 @@ test "readEnum with custom deserialize function" {
     try testing.expectError(error.UnexpectedData, reader.readEnum(EnumType));
 }
 
+pub inline fn readUnion(self: *Self, comptime T: type) Error!T {
+    types.checkUnion(T);
+
+    if (std.meta.hasFn(T, "deserialize")) {
+        return T.deserialize(self);
+    }
+
+    const unionInfo = @typeInfo(T).Union;
+
+    const tag_type = unionInfo.tag_type.?; // its non-null from checkUnion
+
+    const t_info = @typeInfo(tag_type).Enum;
+    const size = t_info.tag_type;
+    const int_value = try self.readInt(size);
+
+    inline for (unionInfo.fields, 0..) |field, i| {
+        if (i == int_value) {
+            if (field.type == void) {
+                return @unionInit(T, field.name, {});
+            } else {
+                return @unionInit(T, field.name, try self.readAny(field.type));
+            }
+        }
+    }
+
+    return error.UnexpectedData;
+}
+
+test "union" {
+    const UnionType = union(enum(u16)) { a: u64, b: void };
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(u16, 0, test_config.endian); // enum tag
+    try rw.writer().writeInt(u64, 123, test_config.endian); // enum value
+    try rw.writer().writeInt(u16, 1, test_config.endian); // enum tag, no value
+    try rw.writer().writeInt(u16, 4, test_config.endian); // bad enum tag
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(UnionType{ .a = 123 }, try reader.readUnion(UnionType));
+    try testing.expectEqual(UnionType{ .b = {} }, try reader.readUnion(UnionType));
+    try testing.expectError(error.UnexpectedData, reader.readUnion(UnionType));
+}
+
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
 //     return struct {
-//         allocator: Allocator,
-//         underlying_reader: AnyReader,
-//         bytes_remaining: usize,
 
-//         pub const Error = AnyReader.Error || DeserializeError;
-
-//         pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: RuntimeConfig) Self {
-//             return .{
-//                 .allocator = allocator,
-//                 .underlying_reader = underlying_reader,
-//                 .bytes_remaining = runtime_config.len,
-//             };
-//         }
-
-//         const Self = @This();
-
-//         /// a typed proxy of the `underlying_reader.read`
-//         /// always use this function to read!
-//         /// TODO: should this be inlined? or is this just bloat?
-//         pub inline fn read(self: *Self, dest: []u8) Error!usize {
-//             const len_min = dest.len;
-
-//             if (len_min > self.bytes_remaining) {
-//                 return error.LengthMismatch;
-//             }
-//             const len_read = try self.underlying_reader.read(dest);
-//             if (len_read > self.bytes_remaining) {
-//                 // TODO: this can technically never happen??
-//                 debug.print("undefined edge case triggered!\n", .{});
-//                 return error.LengthMismatch;
-//             }
-//             self.bytes_remaining -= len_min;
-
-//             return len_read;
-//         }
-
-//         /// a typed proxy of the `underlying_reader.readByte`
-//         /// always use this function to read!
-//         pub inline fn readByte(self: *Self) Error!u8 {
-//             var result: [1]u8 = undefined;
-//             const amt_read = try self.read(result[0..]);
-//             if (amt_read < 1) return error.EndOfStream;
-//             return result[0];
-//         }
-
-//         // using std.json innerParse as an example for this implementation
 //         pub inline fn readAny(self: *Self, comptime T: type) Error!T {
 //             const rich_type = types.getRichType(T);
 
@@ -371,38 +374,6 @@ test "readEnum with custom deserialize function" {
 //                 .HashMapUnmanaged => |KV| self.readHashMapUnmanaged(KV.K, KV.V),
 //                 // else => @compileError("type " ++ @typeName(T) ++ " is not yet implemented"),
 //             };
-//         }
-
-//         pub inline fn readUnion(self: *Self, comptime T: type) anyerror!T {
-//             types.checkUnion(T);
-
-//             // TODO: this is a wrong name
-//             if (std.meta.hasFn(T, "serialize")) {
-//                 return T.serialize(self.allocator, self);
-//             }
-
-//             const unionInfo = @typeInfo(T).Union;
-//             // this check is done internally
-//             // if (unionInfo.tag_type == null) @compileError("Unable to parse into untagged union '" ++ @typeName(T) ++ "'");
-
-//             // read the field, its the size of the union, must be explicitly defined
-//             const tag_type = unionInfo.tag_type.?;
-
-//             const enumInfo = @typeInfo(tag_type).Enum;
-//             const size = enumInfo.tag_type;
-//             const int_value = try self.readInt(size);
-
-//             inline for (unionInfo.fields, 0..) |field, i| {
-//                 if (i == int_value) {
-//                     if (field.type == void) {
-//                         return @unionInit(T, field.name, {});
-//                     } else {
-//                         return @unionInit(T, field.name, try self.readAny(field.type));
-//                     }
-//                 }
-//             }
-
-//             return error.UnknownFieldId;
 //         }
 
 //         pub inline fn readStruct(self: *Self, comptime T: type) anyerror!T {
@@ -561,39 +532,6 @@ test "readEnum with custom deserialize function" {
 // }
 
 // TODO: REFACTOR ALL THESE
-
-// test "union" {
-//     const UnionType = union(enum(u16)) { a: u64, b: ?u32, c: void };
-
-//     const a = testing.allocator;
-//     var buff: [100]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     try rw.writer().writeInt(u16, 0, test_config.endian); // enum tag
-//     try rw.writer().writeInt(u64, 123, test_config.endian); // enum value
-
-//     try rw.writer().writeInt(u16, 1, test_config.endian); // enum tag
-//     try rw.writer().writeInt(u8, 1, test_config.endian); // optional of value
-//     try rw.writer().writeInt(u32, 456, test_config.endian); // value
-
-//     try rw.writer().writeInt(u16, 2, test_config.endian);
-
-//     var reader = binReader(a, rw.reader(), test_config);
-
-//     {
-//         try rw.seekTo(0);
-//         try testing.expectEqual(UnionType{ .a = 123 }, try reader.readUnion(UnionType));
-//         try testing.expectEqual(UnionType{ .b = 456 }, try reader.readUnion(UnionType));
-//         try testing.expectEqual(UnionType{ .c = {} }, try reader.readUnion(UnionType));
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         try testing.expectEqual(UnionType{ .a = 123 }, try reader.readAny(UnionType));
-//         try testing.expectEqual(UnionType{ .b = 456 }, try reader.readAny(UnionType));
-//         try testing.expectEqual(UnionType{ .c = {} }, try reader.readAny(UnionType));
-//     }
-// }
 
 // test "struct" {
 //     const StructT = struct { a: u64, b: i40 };
