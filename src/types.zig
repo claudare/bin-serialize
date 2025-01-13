@@ -46,8 +46,9 @@ pub fn checkBool(T: type) void {
 }
 
 pub fn checkFloat(T: type) void {
-    if (T != f32 and T != f64 and T != f128) {
-        @compileError("float type " ++ @typeName(T) ++ " is not supported, use f32, f64, or f128 instead");
+    // support all of these https://ziglang.org/documentation/master/#toc-Primitive-Types
+    if (T != f16 and T != f32 and T != f64 and T != f80 and T != f128) {
+        @compileError("float type " ++ @typeName(T) ++ " is not supported, use f32, f64, f80, or f128 instead");
     }
 }
 
