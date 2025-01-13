@@ -61,13 +61,12 @@ pub fn checkInt(T: type) void {
     }
 }
 
-// will be used when serializing!?
-// pub fn checkOptional(T: type) void {
-//     switch (@typeInfo(T)) {
-//         .Optional => {},
-//         else => @compileError("type " ++ @typeName(T) ++ " is not an optional"),
-//     }
-// }
+pub fn checkOptional(T: type) void {
+    switch (@typeInfo(T)) {
+        .Optional => {},
+        else => @compileError("type " ++ @typeName(T) ++ " is not an optional"),
+    }
+}
 
 pub fn checkEnum(T: type) void {
     switch (@typeInfo(T)) {
@@ -91,7 +90,7 @@ pub fn checkUnion(T: type) void {
 }
 pub fn checkStruct(T: type) void {
     switch (@typeInfo(T)) {
-        .Struct => {},
+        .Struct => {}, // struct allows both packed and unpacked versions
         else => @compileError("type " ++ @typeName(T) ++ " is not a struct"),
     }
 }

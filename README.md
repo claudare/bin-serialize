@@ -10,8 +10,8 @@ The following types are currently supported/planned:
 - [x] Optional
 - [x] Enum
 - [x] Union
-- [ ] Struct
-- [ ] StructPacked
+- [x] Struct
+- [x] StructPacked
 - [ ] Array
 - [ ] Slice
 - [ ] String

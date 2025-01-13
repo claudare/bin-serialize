@@ -183,12 +183,7 @@ test readInt {
     try testing.expectEqual(123, res);
 }
 
-/// This reads an optional value (nullable one)
-/// nullable values save first u8 as a bool. if its 0, it means that value is null
-/// since its saving it as bool, this is technically inefficient
 pub inline fn readOptional(self: *Self, comptime T: type) Error!?T {
-    // types.checkOptional(T);
-
     const has_value = try self.readBool();
     if (has_value) {
         return try self.readAny(T);
@@ -215,8 +210,6 @@ test readOptional {
 pub inline fn readEnum(self: *Self, comptime T: type) Error!T {
     comptime types.checkEnum(T);
 
-    // ohh snap, this is not possible as this type of generic cant be typed on the struct
-    // therefore anytype is required, but that defeats the whole purpose of this lib!
     if (std.meta.hasFn(T, "deserialize")) {
         return try T.deserialize(self);
     }
@@ -349,6 +342,96 @@ test "union" {
     try testing.expectError(error.UnexpectedData, reader.readUnion(UnionType));
 }
 
+pub inline fn readStruct(self: *Self, comptime T: type) Error!T {
+    types.checkStruct(T);
+
+    if (std.meta.hasFn(T, "deserialize")) {
+        return T.deserialize(self);
+    }
+
+    const struct_info = @typeInfo(T).Struct;
+
+    if (struct_info.is_tuple) {
+        var result: T = undefined;
+        inline for (0..struct_info.fields.len) |i| {
+            result[i] = try self.readAny(struct_info.fields[i].type);
+        }
+        return result;
+    }
+
+    var result: T = undefined;
+
+    inline for (struct_info.fields) |field| {
+        @field(result, field.name) = try self.readAny(field.type);
+    }
+
+    return result;
+}
+
+test "readStruct" {
+    const StructT = struct { a: u64, b: i40 };
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(u64, 123, test_config.endian); // a value
+    try rw.writer().writeInt(i40, -44, test_config.endian); // b value
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    const res = try reader.readStruct(StructT);
+    try testing.expectEqual(123, res.a);
+    try testing.expectEqual(@as(i40, -44), res.b);
+}
+test "readStruct tuple" {
+    const TupleType = std.meta.Tuple(&.{ u64, i40 });
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(u64, 123, test_config.endian); // a value
+    try rw.writer().writeInt(i40, -44, test_config.endian); // b value
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    const res = try reader.readStruct(TupleType);
+    try testing.expectEqual(123, res.@"0");
+    try testing.expectEqual(@as(i40, -44), res.@"1");
+}
+
+/// TODO: check endianess here
+/// like the writer: writeStructEndian
+pub inline fn readStructPacked(self: *Self, comptime T: type) anyerror!T {
+    types.checkStructPacked(T);
+
+    var result: [1]T = undefined;
+
+    // const packed_size = @divExact(@bitSizeOf(T), 8);
+    _ = try self.read(mem.sliceAsBytes(result[0..]));
+    return result[0];
+}
+
+test "struct packed" {
+    const StructT = packed struct { a: u6, b: enum(u2) { x, y, z } };
+
+    const a = testing.allocator;
+    var buff: [1]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeStruct(StructT{ .a = 10, .b = .z });
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    const res = try reader.readStructPacked(StructT);
+    try testing.expectEqual(10, res.a);
+    try testing.expectEqual(.z, res.b);
+}
+
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
 //     return struct {
 
@@ -374,47 +457,6 @@ test "union" {
 //                 .HashMapUnmanaged => |KV| self.readHashMapUnmanaged(KV.K, KV.V),
 //                 // else => @compileError("type " ++ @typeName(T) ++ " is not yet implemented"),
 //             };
-//         }
-
-//         pub inline fn readStruct(self: *Self, comptime T: type) anyerror!T {
-//             types.checkStruct(T);
-
-//             if (std.meta.hasFn(T, "serialize")) {
-//                 return T.serialize(self.allocator, self); // no need to pass the allocator
-//             }
-
-//             const structInfo = @typeInfo(T).Struct;
-
-//             if (structInfo.is_tuple) {
-//                 // this is like a slice! TODO: TEST ME
-//                 var r: T = undefined;
-//                 inline for (0..structInfo.fields.len) |i| {
-//                     r[i] = try self.readAny(structInfo.fields[i].type);
-//                 }
-//                 return r;
-//             }
-
-//             var result: T = undefined;
-
-//             // no default values are allowed!
-//             // all must exist
-//             inline for (structInfo.fields) |field| {
-//                 @field(result, field.name) = try self.readAny(field.type);
-//             }
-
-//             return result;
-//         }
-
-//         /// TODO: check endianess here
-//         /// like the writer: writeStructEndian
-//         pub inline fn readStructPacked(self: *Self, comptime T: type) anyerror!T {
-//             types.checkStructPacked(T);
-
-//             var res: [1]T = undefined;
-
-//             // const packed_size = @divExact(@bitSizeOf(T), 8);
-//             _ = try self.read(mem.sliceAsBytes(res[0..]));
-//             return res[0];
 //         }
 
 //         /// This is for reading of the arrays with fixed sizes
@@ -532,59 +574,6 @@ test "union" {
 // }
 
 // TODO: REFACTOR ALL THESE
-
-// test "struct" {
-//     const StructT = struct { a: u64, b: i40 };
-
-//     const a = testing.allocator;
-//     var buff: [100]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     try rw.writer().writeInt(u64, 123, test_config.endian); // a value
-//     try rw.writer().writeInt(i40, -44, test_config.endian); // b value
-
-//     var reader = binReader(a, rw.reader(), test_config);
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readStruct(StructT);
-//         try testing.expectEqual(123, res.a);
-//         try testing.expectEqual(@as(i40, -44), res.b);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readAny(StructT);
-//         try testing.expectEqual(123, res.a);
-//         try testing.expectEqual(@as(i40, -44), res.b);
-//     }
-// }
-
-// test "struct packed" {
-//     const StructT = packed struct { a: u6, b: enum(u2) { x, y, z } };
-
-//     const a = testing.allocator;
-//     var buff: [1]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     try rw.writer().writeStruct(StructT{ .a = 10, .b = .z });
-
-//     var reader = binReader(a, rw.reader(), test_config);
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readStructPacked(StructT);
-//         try testing.expectEqual(10, res.a);
-//         try testing.expectEqual(.z, res.b);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readAny(StructT);
-//         try testing.expectEqual(10, res.a);
-//         try testing.expectEqual(.z, res.b);
-//     }
-// }
 
 // test "array" {
 //     const ArrayT = [2]u64;
