@@ -2,38 +2,69 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 const debug = std.debug;
-
-const types = @import("types.zig");
-// const RichType = types.RichType;
-// const getRichType = types.getRichType;
-
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
-pub const Config = struct {
+const types = @import("types.zig");
+
+pub const RuntimeConfig = struct {
+    /// Provide the length of the data to be read
+    /// Errors will be thrown if the serialized data data is too short or too long
+    len: usize,
+};
+
+pub const SerializationConfig = struct {
     endian: std.builtin.Endian = .big,
     SliceLenType: type = u32, // limits srting size to 65k, which is a lot!
 };
 
-// TODO: pass allocation size
-pub fn BinReader(comptime ReaderType: type, comptime config: Config) type {
+// custom errors
+pub const DeserializeError = error{
+    /// there was not enough len to read
+    EndOfStream,
+    /// not enough data was read. more should have been read according to ```RuntimeConfig.len```
+    LengthMismatch,
+    /// when reading we got something unexpected
+    UnexpectedData,
+};
+
+pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationConfig) type {
     return struct {
         allocator: Allocator,
         underlying_reader: ReaderType,
+        bytes_remaining: usize,
 
-        pub const Error = ReaderType.Error;
+        pub const Error = ReaderType.Error || DeserializeError;
 
         const Self = @This();
 
-        /// proxy of the `underlying_reader.read`
+        /// a typed proxy of the `underlying_reader.read`
+        /// always use this function to read!
+        /// TODO: should this be inlined? or is this just bloat?
         pub inline fn read(self: *Self, dest: []u8) Error!usize {
-            return self.underlying_reader.read(dest);
+            const len_min = dest.len;
+
+            if (len_min > self.bytes_remaining) {
+                return error.LengthMismatch;
+            }
+            const len_read = try self.underlying_reader.read(dest);
+            if (len_read > self.bytes_remaining) {
+                // TODO: this can technically never happen??
+                debug.print("undefined edge case triggered!\n", .{});
+                return error.LengthMismatch;
+            }
+            self.bytes_remaining -= len_min;
+
+            return len_read;
         }
 
-        /// proxy of the `underlying_reader.readByte`
+        /// a typed proxy of the `underlying_reader.readByte`
+        /// always use this function to read!
         pub inline fn readByte(self: *Self) Error!u8 {
-            // TODO: try to get rid of the conventience method and just reimplement them
-            return self.underlying_reader.readByte();
+            var result: [1]u8 = undefined;
+            const amt_read = try self.read(result[0..]);
+            if (amt_read < 1) return error.EndOfStream;
+            return result[0];
         }
 
         // using std.json innerParse as an example for this implementation
@@ -62,15 +93,15 @@ pub fn BinReader(comptime ReaderType: type, comptime config: Config) type {
         }
 
         /// inefficient way to use bool. Underlying data is aligned to u8
-        pub inline fn readBool(self: *Self) anyerror!bool {
-            const single: u8 = try self.underlying_reader.readByte();
+        pub inline fn readBool(self: *Self) Error!bool {
+            const single: u8 = try self.readByte();
 
             if (single == 1) {
                 return true;
             } else if (single == 0) {
                 return false;
             } else {
-                return error.InvalidBoolEncoding;
+                return error.UnexpectedData;
             }
         }
 
@@ -89,7 +120,7 @@ pub fn BinReader(comptime ReaderType: type, comptime config: Config) type {
             }
 
             // const bytes = try self.readBytesNoEof();
-            return mem.readInt(T, &buff, config.endian);
+            return mem.readInt(T, &buff, ser_config.endian);
         }
 
         pub inline fn readFloat(self: *Self, comptime T: type) anyerror!T {
@@ -240,7 +271,7 @@ pub fn BinReader(comptime ReaderType: type, comptime config: Config) type {
         /// so that the Reader now becomes stateful!
         /// but max len per field is enforced
         pub inline fn readString(self: *Self) anyerror![]const u8 {
-            const len = try self.readInt(config.SliceLenType);
+            const len = try self.readInt(ser_config.SliceLenType);
 
             // TODO: check length
 
@@ -267,7 +298,7 @@ pub fn BinReader(comptime ReaderType: type, comptime config: Config) type {
         }
 
         pub inline fn readArrayListUnmanaged(self: *Self, comptime TItem: type) anyerror!std.ArrayListUnmanaged(TItem) {
-            const len = try self.readInt(config.SliceLenType);
+            const len = try self.readInt(ser_config.SliceLenType);
             // what if I want unmanaged?
             var unmanaged = try std.ArrayListUnmanaged(TItem).initCapacity(self.allocator, len);
             errdefer unmanaged.deinit(self.allocator);
@@ -290,7 +321,7 @@ pub fn BinReader(comptime ReaderType: type, comptime config: Config) type {
         pub inline fn readHashMapUnmanaged(self: *Self, comptime K: type, comptime V: type) anyerror!std.AutoHashMapUnmanaged(K, V) {
             // or it gives me a hashmap and I append to it!
             // TODO: check for presence of unmanaged: Unmanaged on it. If unmanaged exists, that means the underlying structure is managed
-            const len = try self.readInt(config.SliceLenType);
+            const len = try self.readInt(ser_config.SliceLenType);
 
             var unmanaged = std.AutoHashMapUnmanaged(K, V){};
             try unmanaged.ensureUnusedCapacity(self.allocator, len);
@@ -325,15 +356,17 @@ pub fn BinReader(comptime ReaderType: type, comptime config: Config) type {
 pub fn binReader(
     allocator: Allocator,
     underlying_reader: anytype,
-    cfg: Config,
-) BinReader(@TypeOf(underlying_reader), cfg) {
+    runtime_config: RuntimeConfig,
+    serialization_config: SerializationConfig,
+) BinReader(@TypeOf(underlying_reader), serialization_config) {
     return .{
         .allocator = allocator,
         .underlying_reader = underlying_reader,
+        .bytes_remaining = runtime_config.len,
     };
 }
 
-const test_config = Config{
+const test_config = SerializationConfig{
     .endian = .big,
     .SliceLenType = u16,
 };
@@ -343,21 +376,14 @@ test "bool" {
     var buff: [3]u8 = .{ 0b0, 0b1, 0b1000 };
     var rw = std.io.fixedBufferStream(&buff);
 
-    var reader = binReader(a, rw.reader(), test_config);
+    var reader = binReader(a, rw.reader(), .{ .len = 3 }, test_config);
 
-    {
-        try rw.seekTo(0);
-        try testing.expectEqual(false, try reader.readBool());
-        try testing.expectEqual(true, try reader.readBool());
-        try testing.expectError(error.InvalidBoolEncoding, reader.readBool());
-    }
+    try testing.expectEqual(false, try reader.readBool());
+    try testing.expectEqual(true, try reader.readBool());
+    try testing.expectError(error.UnexpectedData, reader.readBool());
 
-    {
-        try rw.seekTo(0);
-        try testing.expectEqual(false, try reader.readAny(bool));
-        try testing.expectEqual(true, try reader.readAny(bool));
-        try testing.expectError(error.InvalidBoolEncoding, reader.readAny(bool));
-    }
+    // out of bounds!
+    try testing.expectError(error.LengthMismatch, reader.readBool());
 }
 
 test "float" {

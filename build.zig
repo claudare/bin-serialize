@@ -64,11 +64,20 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    // https://ziggit.dev/t/how-to-filter-test-using-test-filter-test-name-in-conjunction-with-build-zig/5609/3
+    // fun with "zig build test -Dtest-filter=bool"
+    const test_filters: []const []const u8 = b.option(
+        []const []const u8,
+        "test-filter",
+        "Skip tests that do not match any of the specified filters",
+    ) orelse &.{};
+
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
+        .filters = test_filters,
         .optimize = optimize,
     });
 
