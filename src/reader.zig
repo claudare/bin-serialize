@@ -105,24 +105,6 @@ pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationCo
             }
         }
 
-        // errors need to be wrapped completely?
-        // TODO: for now the size must be divisble by 8 exactly
-        pub inline fn readInt(self: *Self, comptime T: type) anyerror!T {
-            types.checkInt(T);
-
-            const byte_count = @divExact(@typeInfo(T).Int.bits, 8);
-            var buff: [byte_count]u8 = undefined;
-
-            const read_count = try self.underlying_reader.read(&buff);
-
-            if (read_count != byte_count) {
-                return error.SomethingIsWrong;
-            }
-
-            // const bytes = try self.readBytesNoEof();
-            return mem.readInt(T, &buff, ser_config.endian);
-        }
-
         pub inline fn readFloat(self: *Self, comptime T: type) anyerror!T {
             types.checkFloat(T);
 
@@ -137,6 +119,19 @@ pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationCo
             const result: T = @bitCast(int_value);
 
             return result;
+        }
+
+        // errors need to be wrapped completely?
+        // TODO: for now the size must be divisble by 8 exactly
+        pub inline fn readInt(self: *Self, comptime T: type) anyerror!T {
+            types.checkInt(T);
+
+            const byte_count = @divExact(@typeInfo(T).Int.bits, 8);
+            var buff: [byte_count]u8 = undefined;
+
+            _ = try self.read(&buff);
+
+            return mem.readInt(T, &buff, ser_config.endian);
         }
 
         /// This reads an optional value (nullable one)
@@ -378,11 +373,11 @@ test "bool" {
 
     var reader = binReader(a, rw.reader(), .{ .len = 3 }, test_config);
 
+    try rw.seekTo(0);
     try testing.expectEqual(false, try reader.readBool());
     try testing.expectEqual(true, try reader.readBool());
     try testing.expectError(error.UnexpectedData, reader.readBool());
-
-    // out of bounds!
+    // out of bounds check!
     try testing.expectError(error.LengthMismatch, reader.readBool());
 }
 
@@ -394,19 +389,11 @@ test "float" {
     const float_encoded: u64 = @bitCast(@as(f64, 123.456)); // bitcast to encode it!
     try rw.writer().writeInt(u64, float_encoded, test_config.endian);
 
-    var reader = binReader(a, rw.reader(), test_config);
+    var reader = binReader(a, rw.reader(), .{ .len = @divExact(64, 8) }, test_config);
 
-    {
-        try rw.seekTo(0);
-        const res = try reader.readFloat(f64);
-        try testing.expectEqual(@as(f64, 123.456), res);
-    }
-
-    {
-        try rw.seekTo(0);
-        const res = try reader.readAny(f64);
-        try testing.expectEqual(@as(f64, 123.456), res);
-    }
+    try rw.seekTo(0);
+    const res = try reader.readFloat(f64);
+    try testing.expectEqual(@as(f64, 123.456), res);
 }
 
 test "int" {
@@ -414,21 +401,13 @@ test "int" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u64, 123, test_config.endian);
+    try rw.writer().writeInt(u40, 123, test_config.endian);
 
-    var reader = binReader(a, rw.reader(), test_config);
+    var reader = binReader(a, rw.reader(), .{ .len = @divExact(40, 8) }, test_config);
 
-    {
-        try rw.seekTo(0);
-        const res = try reader.readInt(u64);
-        try testing.expectEqual(123, res);
-    }
-
-    {
-        try rw.seekTo(0);
-        const res = try reader.readAny(u64);
-        try testing.expectEqual(123, res);
-    }
+    try rw.seekTo(0);
+    const res = try reader.readInt(u40);
+    try testing.expectEqual(123, res);
 }
 
 test "optional" {

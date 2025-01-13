@@ -5,8 +5,8 @@ A zig serailization library which allows for simple automatic and custom seriali
 The following types are currently supported/planned:
 
 - [x] Bool
-- [ ] Float
-- [ ] Int
+- [x] Float
+- [x] Int
 - [ ] Optional
 - [ ] Enum
 - [ ] Union
