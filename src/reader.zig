@@ -105,7 +105,7 @@ pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationCo
             }
         }
 
-        pub inline fn readFloat(self: *Self, comptime T: type) anyerror!T {
+        pub inline fn readFloat(self: *Self, comptime T: type) Error!T {
             types.checkFloat(T);
 
             const IntType = switch (@bitSizeOf(T)) {
@@ -121,9 +121,8 @@ pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationCo
             return result;
         }
 
-        // errors need to be wrapped completely?
         // TODO: for now the size must be divisble by 8 exactly
-        pub inline fn readInt(self: *Self, comptime T: type) anyerror!T {
+        pub inline fn readInt(self: *Self, comptime T: type) Error!T {
             types.checkInt(T);
 
             const byte_count = @divExact(@typeInfo(T).Int.bits, 8);
@@ -137,7 +136,7 @@ pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationCo
         /// This reads an optional value (nullable one)
         /// nullable values save first u8 as a bool. if its 0, it means that value is null
         /// since its saving it as bool, this is technically inefficient
-        pub inline fn readOptional(self: *Self, comptime T: type) anyerror!?T {
+        pub inline fn readOptional(self: *Self, comptime T: type) Error!?T {
             // types.checkOptional(T);
 
             const has_value = try self.readBool();
