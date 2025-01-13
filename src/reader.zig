@@ -146,21 +146,29 @@ pub fn BinReader(comptime ReaderType: type, comptime ser_config: SerializationCo
             return null;
         }
 
-        pub inline fn readEnum(self: *Self, comptime T: type) anyerror!T {
+        pub inline fn readEnum(self: *Self, comptime T: type) Error!T {
             types.checkEnum(T);
 
-            if (std.meta.hasFn(T, "serialize")) {
-                return T.serialize(self.allocator, self);
+            // ohh snap, this is not possible as this type of generic cant be typed on the struct
+            // therefore anytype is required, but that defeats the whole purpose of this lib!
+            if (std.meta.hasFn(T, "deserialize")) {
+                return T.deserialize(self.allocator, self);
             }
 
-            const int_value = try self.readInt(@typeInfo(T).Enum.tag_type);
+            const t_info = @typeInfo(T).Enum;
+            const int_value = try self.readInt(t_info.tag_type);
 
-            return @enumFromInt(int_value);
+            if (t_info.is_exhaustive) {
+                return std.meta.intToEnum(T, int_value) catch error.UnexpectedData;
+            } else {
+                return @enumFromInt(int_value);
+            }
         }
 
         pub inline fn readUnion(self: *Self, comptime T: type) anyerror!T {
             types.checkUnion(T);
 
+            // TODO: this is a wrong name
             if (std.meta.hasFn(T, "serialize")) {
                 return T.serialize(self.allocator, self);
             }
@@ -425,7 +433,7 @@ test "optional" {
     try testing.expectEqual(123, try reader.readOptional(u64));
 }
 
-test "enum" {
+test "enum exhaustive" {
     const EnumType = enum(u8) { a, b };
 
     const a = testing.allocator;
@@ -435,19 +443,28 @@ test "enum" {
     try rw.writer().writeInt(u8, 0, test_config.endian);
     try rw.writer().writeInt(u8, 1, test_config.endian);
 
-    var reader = binReader(a, rw.reader(), test_config);
+    var reader = binReader(a, rw.reader(), .{ .len = 2 }, test_config);
 
-    {
-        try rw.seekTo(0);
-        try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
-        try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
-    }
+    try rw.seekTo(0);
+    try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
+    try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
+}
 
-    {
-        try rw.seekTo(0);
-        try testing.expectEqual(EnumType.a, try reader.readAny(EnumType));
-        try testing.expectEqual(EnumType.b, try reader.readAny(EnumType));
-    }
+test "enum non-exhaustive" {
+    const EnumType = enum(u8) { a, b, _ };
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(u8, 0, test_config.endian);
+    try rw.writer().writeInt(u8, 1, test_config.endian);
+
+    var reader = binReader(a, rw.reader(), .{ .len = 2 }, test_config);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
+    try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
 }
 
 test "union" {

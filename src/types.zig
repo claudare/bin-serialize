@@ -70,7 +70,13 @@ pub fn checkInt(T: type) void {
 
 pub fn checkEnum(T: type) void {
     switch (@typeInfo(T)) {
-        .Enum => {},
+        .Enum => |info| {
+            // FIXME: what is done if usize is defined on the struct?
+            // I guess cast to u64/i64 is sufficient?
+            if (info.tag_type == usize or info.tag_type == isize) {
+                @compileError("FIXME: behavior for dynamic tag type of " ++ @typeName(T) ++ " has not been defined yet");
+            }
+        },
         else => @compileError("type " ++ @typeName(T) ++ " is not an enum"),
     }
 }
