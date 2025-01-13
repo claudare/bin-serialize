@@ -8,7 +8,7 @@ The following types are currently supported/planned:
 - [x] Float
 - [x] Int
 - [x] Optional
-- [ ] Enum
+- [x] Enum
 - [ ] Union
 - [ ] Struct
 - [ ] StructPacked

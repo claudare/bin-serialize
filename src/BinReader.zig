@@ -231,7 +231,7 @@ pub inline fn readEnum(self: *Self, comptime T: type) Error!T {
     }
 }
 
-test "enum exhaustive" {
+test "readEnum exhaustive" {
     const EnumType = enum(u8) { a, b };
 
     const a = testing.allocator;
@@ -248,7 +248,7 @@ test "enum exhaustive" {
     try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
 }
 
-test "enum non-exhaustive" {
+test "readEnum non-exhaustive" {
     const EnumType = enum(u8) { a, b, _ };
 
     const a = testing.allocator;
@@ -265,11 +265,10 @@ test "enum non-exhaustive" {
     try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
 }
 
-test "enum with custom deserialize function" {
-    const CustomEnumType = enum(u8) {
+test "readEnum with custom deserialize function" {
+    const EnumType = enum(u8) {
         a,
         b,
-        _,
 
         // oh boy, this is, in my humble opinion, a rough side of zig
         // its not possible to type it, and using anytype is very hard.
@@ -297,9 +296,9 @@ test "enum with custom deserialize function" {
     var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
-    try testing.expectEqual(CustomEnumType.a, try reader.readEnum(CustomEnumType));
-    try testing.expectEqual(CustomEnumType.b, try reader.readEnum(CustomEnumType));
-    try testing.expectError(error.UnexpectedData, reader.readEnum(CustomEnumType));
+    try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
+    try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
+    try testing.expectError(error.UnexpectedData, reader.readEnum(EnumType));
 }
 
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
@@ -372,79 +371,6 @@ test "enum with custom deserialize function" {
 //                 .HashMapUnmanaged => |KV| self.readHashMapUnmanaged(KV.K, KV.V),
 //                 // else => @compileError("type " ++ @typeName(T) ++ " is not yet implemented"),
 //             };
-//         }
-
-//         /// inefficient way to use bool. Underlying data is aligned to u8
-//         pub inline fn readBool(self: *Self) Error!bool {
-//             const single: u8 = try self.readByte();
-
-//             if (single == 1) {
-//                 return true;
-//             } else if (single == 0) {
-//                 return false;
-//             } else {
-//                 return error.UnexpectedData;
-//             }
-//         }
-
-//         pub inline fn readFloat(self: *Self, comptime T: type) Error!T {
-//             types.checkFloat(T);
-
-//             const IntType = switch (@bitSizeOf(T)) {
-//                 32 => u32,
-//                 64 => u64,
-//                 128 => u128,
-//                 else => unreachable,
-//             };
-
-//             const int_value = try self.readInt(IntType);
-//             const result: T = @bitCast(int_value);
-
-//             return result;
-//         }
-
-//         // TODO: for now the size must be divisble by 8 exactly
-//         pub inline fn readInt(self: *Self, comptime T: type) Error!T {
-//             types.checkInt(T);
-
-//             const byte_count = @divExact(@typeInfo(T).Int.bits, 8);
-//             var buff: [byte_count]u8 = undefined;
-
-//             _ = try self.read(&buff);
-
-//             return mem.readInt(T, &buff, ser_config.endian);
-//         }
-
-//         /// This reads an optional value (nullable one)
-//         /// nullable values save first u8 as a bool. if its 0, it means that value is null
-//         /// since its saving it as bool, this is technically inefficient
-//         pub inline fn readOptional(self: *Self, comptime T: type) Error!?T {
-//             // types.checkOptional(T);
-
-//             const has_value = try self.readBool();
-//             if (has_value) {
-//                 return try self.readAny(T);
-//             }
-//             return null;
-//         }
-
-//         pub inline fn readEnum(self: *Self, comptime T: type) Error!T {
-//             comptime types.checkEnum(T);
-
-//             // ohh snap, this is not possible as this type of generic cant be typed on the struct
-//             // therefore anytype is required, but that defeats the whole purpose of this lib!
-//             if (std.meta.hasFn(T, "deserialize")) {
-//                 return try T.deserialize(self);
-//             }
-
-//             const t_info = @typeInfo(T).Enum;
-//             const int_value = try self.readInt(t_info.tag_type);
-
-//             if (t_info.is_exhaustive) {
-//                 return std.meta.intToEnum(T, int_value) catch error.UnexpectedData;
-//             } else {
-//                 return @enumFromInt(int_value);
-//             }
 //         }
 
 //         pub inline fn readUnion(self: *Self, comptime T: type) anyerror!T {
