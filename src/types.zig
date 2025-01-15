@@ -233,7 +233,7 @@ test getRichType {
     const EnumT = enum { a, b };
     try testing.expectEqual(EnumT, getRichType(EnumT).Enum);
 
-    const UnionT = union(enum(u1)) { a: u64 };
+    const UnionT = union(enum(u0)) { a: u64 };
     try testing.expectEqual(UnionT, getRichType(UnionT).Union);
 
     const StructT = struct { a: u64 };
