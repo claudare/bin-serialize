@@ -2,43 +2,6 @@ const std = @import("std");
 const mem = std.mem;
 const debug = std.debug;
 
-pub const KV = struct {
-    K: type,
-    V: type,
-    pub fn infer(comptime T: type) KV {
-        const kv_struct = @typeInfo(T.KV).Struct;
-        return .{
-            .K = kv_struct.fields[0].type,
-            .V = kv_struct.fields[1].type,
-        };
-    }
-};
-
-pub const RichType = union(enum) {
-    Bool: void,
-    Float: type,
-    Int: type,
-    Optional: type,
-    Enum: type,
-    Union: type,
-    Struct: type,
-    // "packed" or "external" structs automatically use a more efficient method
-    StructPacked: type,
-    Array: type,
-    // this is a speical type to be recycled
-    Slice: type,
-    // special type of slice: []const u8
-    String: void,
-    //TODO: Vector: type,
-    PointerSingle: type,
-
-    // std types
-    ArrayListUnmanaged: type,
-    ArrayList: type,
-    HashMapUnmanaged: KV,
-    HashMap: KV,
-};
-
 pub fn checkBool(T: type) void {
     if (T != bool) {
         @compileError("type " ++ @typeName(T) ++ " is not a boolean");
@@ -144,9 +107,42 @@ pub fn checkPointerSingle(T: type) void {
     }
 }
 
-// pub fn checkArrayListUnmanaged(T_FULL: type) void {
+pub const KV = struct {
+    K: type,
+    V: type,
+    pub fn infer(comptime T: type) KV {
+        const kv_struct = @typeInfo(T.KV).Struct;
+        return .{
+            .K = kv_struct.fields[0].type,
+            .V = kv_struct.fields[1].type,
+        };
+    }
+};
 
-// }
+pub const RichType = union(enum) {
+    Bool: void,
+    Float: type,
+    Int: type,
+    Optional: type,
+    Enum: type,
+    Union: type,
+    Struct: type,
+    // "packed" or "external" structs automatically use a more efficient method
+    StructPacked: type,
+    Array: type,
+    // this is a speical type to be recycled
+    Slice: type,
+    // special type of slice: []const u8
+    String: void,
+    //TODO: Vector: type,
+    PointerSingle: type,
+
+    // std types
+    ArrayListUnmanaged: type,
+    ArrayList: type,
+    HashMapUnmanaged: KV,
+    HashMap: KV,
+};
 
 pub fn getRichType(comptime T: type) RichType {
     const type_info = @typeInfo(T);
@@ -174,15 +170,15 @@ pub fn getRichType(comptime T: type) RichType {
         // this also handles the slices of dynamic size
         .Pointer => |info| {
             switch (info.size) {
-                // i would like to handle this here,
-                // but it does not seem like a good idea
                 .One => {
+                    // is this better for uniformity?
+                    // return .{ .PointerSingle = info.child };
                     return .{ .PointerSingle = T };
                 },
                 .Slice => {
                     if (info.child == u8) {
                         if (info.is_const) {
-                            return .{ .String = void };
+                            return .{ .String = {} };
                         }
 
                         @compileError("non const u8 slices ([]u8) are not implemented yet");
@@ -228,15 +224,34 @@ pub fn getRichType(comptime T: type) RichType {
 
 const testing = std.testing;
 
-test "types basic" {
-    try testing.expectEqualDeep(RichType{ .Bool = {} }, getRichType(bool));
+test getRichType {
+    try testing.expectEqual({}, getRichType(bool).Bool);
     try testing.expectEqual(f32, getRichType(f32).Float);
-}
+    try testing.expectEqual(u88, getRichType(u88).Int);
+    try testing.expectEqual(u88, getRichType(?u88).Optional);
 
-test "types ArrayList and Hashmap" {
-    try testing.expectEqual(i32, getRichType(std.ArrayList(i32)).ArrayList);
-    try testing.expectEqual(i32, getRichType(std.ArrayListUnmanaged(i32)).ArrayListUnmanaged);
+    const EnumT = enum { a, b };
+    try testing.expectEqual(EnumT, getRichType(EnumT).Enum);
 
+    const UnionT = union(enum(u1)) { a: u64 };
+    try testing.expectEqual(UnionT, getRichType(UnionT).Union);
+
+    const StructT = struct { a: u64 };
+    try testing.expectEqual(StructT, getRichType(StructT).Struct);
+
+    const StructPackedT = packed struct { a: u64 };
+    try testing.expectEqual(StructPackedT, getRichType(StructPackedT).StructPacked);
+    const StructExternT = extern struct { a: u64 };
+    try testing.expectEqual(StructExternT, getRichType(StructExternT).StructPacked);
+
+    const ArrayT = [3]u64;
+    try testing.expectEqual(ArrayT, getRichType(ArrayT).Array);
+
+    try testing.expectEqual(u64, getRichType([]u64).Slice);
+    try testing.expectEqual(u64, getRichType(std.ArrayList(u64)).ArrayList);
+    try testing.expectEqual(u64, getRichType(std.ArrayListUnmanaged(u64)).ArrayListUnmanaged);
+    try testing.expectEqual({}, getRichType([]const u8).String);
+    try testing.expectEqual(*u64, getRichType(*u64).PointerSingle);
     try testing.expectEqualDeep(RichType{ .HashMap = .{ .K = i32, .V = u64 } }, getRichType(std.AutoHashMap(i32, u64)));
     try testing.expectEqualDeep(RichType{ .HashMapUnmanaged = .{ .K = i32, .V = u64 } }, getRichType(std.AutoHashMapUnmanaged(i32, u64)));
 }

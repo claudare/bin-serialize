@@ -590,9 +590,12 @@ test readString {
     try testing.expectEqualStrings("hello world", res);
 }
 
+/// Reads a pointer and returns a pointer
+/// Type T MUST be a pointer type, and it returns a pointer too
 pub inline fn readPointer(self: *Self, comptime T: type) Error!T {
     types.checkPointerSingle(T);
 
+    // FIXME: this is broken...
     const ChildType = @typeInfo(T).Pointer.child;
 
     const result: *ChildType = try self.allocator.create(ChildType);
