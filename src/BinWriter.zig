@@ -130,7 +130,7 @@ pub inline fn writeInt(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkInt(T);
 
     var bytes: [@divExact(@typeInfo(T).Int.bits, 8)]u8 = undefined;
-    std.mem.writeInt(std.math.ByteAlignedInt(@TypeOf(value)), &bytes, value, self.ser_config.endian);
+    std.mem.writeInt(std.math.ByteAlignedInt(T), &bytes, value, self.ser_config.endian);
     _ = try self.write(&bytes);
 }
 
