@@ -18,5 +18,5 @@ The following types are currently supported/planned:
 - [x] ArrayListUnmanaged
 - [x] String
 - [x] Pointer
-- [x] HashMap
-- [x] HashMapUnmanaged
+- [x] AutoHashMap
+- [x] AutoHashMapUnmanaged
