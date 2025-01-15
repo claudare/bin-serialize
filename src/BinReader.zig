@@ -616,6 +616,89 @@ test readPointer {
     try testing.expectEqual(@as(u64, 123), res.*);
 }
 
+pub inline fn readHashMapUnmanaged(self: *Self, comptime K: type, comptime V: type) Error!std.AutoHashMapUnmanaged(K, V) {
+    // or it gives me a hashmap and I append to it!
+    // TODO: check for presence of unmanaged: Unmanaged on it. If unmanaged exists, that means the underlying structure is managed
+    const len = try self.readInt(SliceLen);
+
+    var unmanaged = std.AutoHashMapUnmanaged(K, V){};
+    try unmanaged.ensureUnusedCapacity(self.allocator, len);
+    // TODO: also need to deinit each value when error appears!
+    // should this look for free() or deinit()? if so, presence or absence of an allocator must be detected
+    // this is turning into an automagical solution, which is conventient, but its not zig!
+    errdefer unmanaged.deinit(self.allocator);
+
+    for (0..len) |_| {
+        const k = try self.readAny(K);
+        const v = try self.readAny(V);
+
+        // TODO: check if NoClobber is safe
+        // maybe with a config option?
+        // maybe expose this here?
+        unmanaged.putAssumeCapacityNoClobber(k, v);
+    }
+
+    return unmanaged;
+}
+
+test "readHashmapUnmanaged" {
+    //const T = std.AutoHashMapUnmanaged(u32, u64);
+
+    const a = testing.allocator;
+
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
+    try rw.writer().writeInt(u32, 1, test_config.endian);
+    try rw.writer().writeInt(u64, 10, test_config.endian);
+    try rw.writer().writeInt(u32, 2, test_config.endian);
+    try rw.writer().writeInt(u64, 20, test_config.endian);
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    var res = try reader.readHashMapUnmanaged(u32, u64);
+    defer res.deinit(a);
+
+    try testing.expectEqual(2, res.count());
+    try testing.expectEqual(10, res.get(1).?);
+    try testing.expectEqual(20, res.get(2).?);
+}
+
+/// Will return an autohashmap
+/// TODO: special case must be taken when string is the key!
+/// Note: this assumes that there are no duplicate keys!
+pub inline fn readHashMap(self: *Self, comptime K: type, comptime V: type) Error!std.AutoHashMap(K, V) {
+    const unmanaged = try self.readHashMapUnmanaged(K, V);
+    return unmanaged.promote(self.allocator);
+}
+
+test "readHashmap" {
+    //const T = std.AutoHashMap(u32, u64);
+
+    const a = testing.allocator;
+
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
+    try rw.writer().writeInt(u32, 1, test_config.endian);
+    try rw.writer().writeInt(u64, 10, test_config.endian);
+    try rw.writer().writeInt(u32, 2, test_config.endian);
+    try rw.writer().writeInt(u64, 20, test_config.endian);
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    var res = try reader.readHashMap(u32, u64);
+    defer res.deinit();
+
+    try testing.expectEqual(2, res.count());
+    try testing.expectEqual(10, res.get(1).?);
+    try testing.expectEqual(20, res.get(2).?);
+}
+
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
 //     return struct {
 
@@ -650,38 +733,6 @@ test readPointer {
 //         /// so that the Reader now becomes stateful!
 //         /// but max len per field is enforced
 
-//         pub inline fn readHashMapUnmanaged(self: *Self, comptime K: type, comptime V: type) anyerror!std.AutoHashMapUnmanaged(K, V) {
-//             // or it gives me a hashmap and I append to it!
-//             // TODO: check for presence of unmanaged: Unmanaged on it. If unmanaged exists, that means the underlying structure is managed
-//             const len = try self.readInt(ser_config.SliceLenType);
-
-//             var unmanaged = std.AutoHashMapUnmanaged(K, V){};
-//             try unmanaged.ensureUnusedCapacity(self.allocator, len);
-//             // TODO: also need to deinit each value when error appears!
-//             // should this look for free() or deinit()? if so, presence or absence of an allocator must be detected
-//             // this is turning into an automagical solution, which is conventient, but its not zig!
-//             errdefer unmanaged.deinit(self.allocator);
-
-//             for (0..len) |_| {
-//                 const k = try self.readAny(K);
-//                 const v = try self.readAny(V);
-
-//                 // TODO: check if NoClobber is safe
-//                 unmanaged.putAssumeCapacityNoClobber(k, v);
-//             }
-
-//             return unmanaged;
-//         }
-//         /// Will return an autohashmap
-//         /// TODO: special case must be taken when string is the key!
-//         /// Note: this assumes that there are no duplicate keys!
-//         pub inline fn readHashMap(self: *Self, comptime K: type, comptime V: type) anyerror!std.AutoHashMap(K, V) {
-//             const unmanaged = try self.readHashMapUnmanaged(K, V);
-//             return unmanaged.promote(self.allocator);
-//         }
-//     };
-// }
-
 // TODO: REFACTOR ALL THESE
 
 // // TODO!!!
@@ -713,61 +764,3 @@ test readPointer {
 // //         try testing.expectEqualStrings("hello world", res);
 // //     }
 // // }
-
-// test "hashmap" {
-//     const T = struct {
-//         managed: std.AutoHashMap(u32, u64),
-//         unmanaged: std.AutoHashMapUnmanaged(u32, u64),
-//     };
-
-//     // lets encode it manually...
-//     const a = testing.allocator;
-
-//     var buff: [100]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     for (0..2) |_| {
-//         try rw.writer().writeInt(test_config.SliceLenType, 2, test_config.endian);
-//         try rw.writer().writeInt(u32, 1, test_config.endian);
-//         try rw.writer().writeInt(u64, 10, test_config.endian);
-//         try rw.writer().writeInt(u32, 2, test_config.endian);
-//         try rw.writer().writeInt(u64, 20, test_config.endian);
-//     }
-
-//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
-
-//     {
-//         try rw.seekTo(0);
-//         var res = try reader.readHashMap(u32, u64);
-//         defer res.deinit();
-
-//         try testing.expectEqual(2, res.count());
-//         try testing.expectEqual(10, res.get(1).?);
-//         try testing.expectEqual(20, res.get(2).?);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         var res = try reader.readHashMapUnmanaged(u32, u64);
-//         defer res.deinit(a);
-
-//         try testing.expectEqual(2, res.count());
-//         try testing.expectEqual(10, res.get(1).?);
-//         try testing.expectEqual(20, res.get(2).?);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         var res = try reader.readAny(T);
-//         defer res.managed.deinit();
-//         defer res.unmanaged.deinit(a);
-
-//         try testing.expectEqual(2, res.managed.count());
-//         try testing.expectEqual(10, res.managed.get(1).?);
-//         try testing.expectEqual(20, res.managed.get(2).?);
-
-//         try testing.expectEqual(2, res.unmanaged.count());
-//         try testing.expectEqual(10, res.unmanaged.get(1).?);
-//         try testing.expectEqual(20, res.unmanaged.get(2).?);
-//     }
-// }
