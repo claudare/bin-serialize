@@ -94,3 +94,26 @@ test writeBool {
     try testing.expectEqual(1, buff[0]);
     try testing.expectEqual(0, buff[1]);
 }
+
+pub inline fn writeInt(self: *BinWriter, value: anytype) WriterError!void {
+    const T = @TypeOf(value);
+    types.checkInt(T);
+
+    var bytes: [@divExact(@typeInfo(T).Int.bits, 8)]u8 = undefined;
+    std.mem.writeInt(std.math.ByteAlignedInt(@TypeOf(value)), &bytes, value, self.ser_config.endian);
+    _ = try self.write(&bytes);
+}
+
+test writeInt {
+    const a = testing.allocator;
+    var buff: [10]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try rw.seekTo(0);
+    try writer.writeInt(@as(u32, 123));
+
+    try rw.seekTo(0);
+    try testing.expectEqual(123, rw.reader().readInt(u32, test_config.endian));
+}
