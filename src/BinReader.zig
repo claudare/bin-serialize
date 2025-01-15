@@ -590,6 +590,32 @@ test readString {
     try testing.expectEqualStrings("hello world", res);
 }
 
+pub inline fn readPointer(self: *Self, comptime T: type) Error!T {
+    types.checkPointerSingle(T);
+
+    const ChildType = @typeInfo(T).Pointer.child;
+
+    const result: *ChildType = try self.allocator.create(ChildType);
+    result.* = try self.readAny(ChildType);
+    return result;
+}
+
+test readPointer {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(u64, 123, test_config.endian);
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    const res = try reader.readPointer(*u64);
+    defer a.destroy(res);
+
+    try testing.expectEqual(@as(u64, 123), res.*);
+}
+
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
 //     return struct {
 
@@ -618,15 +644,6 @@ test readString {
 //         }
 
 //         // this a single pointer!
-//         pub inline fn readPointer(self: *Self, comptime T: type) anyerror!T {
-//             types.checkPointerSingle(T);
-
-//             const ChildType = @typeInfo(T).Pointer.child;
-
-//             const result: *ChildType = try self.allocator.create(ChildType);
-//             result.* = try self.readAny(ChildType);
-//             return result;
-//         }
 
 //         /// this will cause an allocation or arbitrary size, limited by config
 //         /// the allocated memory should be shared. Maximum length is fixed and initialized at startup
@@ -696,34 +713,6 @@ test readString {
 // //         try testing.expectEqualStrings("hello world", res);
 // //     }
 // // }
-
-// test "pointer" {
-//     const a = testing.allocator;
-//     var buff: [100]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     try rw.writer().writeInt(u64, 123, test_config.endian);
-
-//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
-
-//     {
-//         const OuterT = struct { a: *struct { b: u64 } };
-
-//         try rw.seekTo(0);
-//         const res = try reader.readAny(OuterT);
-//         defer a.destroy(res.a); // CAREFUL: pointers need to be cleaned up ?!!
-
-//         try testing.expectEqual(@as(u64, 123), res.a.b);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readPointer(*u64);
-//         defer a.destroy(res);
-
-//         try testing.expectEqual(@as(u64, 123), res.*);
-//     }
-// }
 
 // test "hashmap" {
 //     const T = struct {
