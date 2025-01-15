@@ -5,16 +5,16 @@ const AnyReader = std.io.AnyReader;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
-const SliceLen = @import("config.zig").SliceLen;
-const ConfigSerialization = @import("config.zig").ConfigSerialization;
-const ReaderConfig = @import("config.zig").ReaderConfig;
+const config = @import("config.zig");
+
+const SliceLen = config.SliceLen;
+const ConfigSerialization = config.ConfigSerialization;
+const ReaderConfig = config.ReaderConfig;
 const types = @import("types.zig");
 
 const BinReader = @This();
 
-const test_config = ConfigSerialization{
-    .endian = .big,
-};
+const test_config = config.test_config;
 
 // FIXME: AnyReader.Error is anyerror... it doesnt help at all
 pub const ReaderError = AnyReader.Error || error{
