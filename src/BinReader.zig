@@ -1,5 +1,4 @@
 const std = @import("std");
-const mem = std.mem;
 const testing = std.testing;
 const debug = std.debug;
 const AnyReader = std.io.AnyReader;
@@ -8,16 +7,19 @@ const Allocator = std.mem.Allocator;
 
 const SliceLen = @import("config.zig").SliceLen;
 const ConfigSerialization = @import("config.zig").ConfigSerialization;
-const ConfigRuntime = @import("config.zig").ConfigRuntime;
+const ReaderConfig = @import("config.zig").ReaderConfig;
 const types = @import("types.zig");
-const Self = @This();
+
+const BinReader = @This();
 
 const test_config = ConfigSerialization{
     .endian = .big,
 };
 
-// custom errors
-pub const DeserializeError = error{
+// FIXME: AnyReader.Error is anyerror... it doesnt help at all
+pub const ReaderError = AnyReader.Error || error{
+    /// present when allocator is used
+    OutOfMemory,
     /// there was not enough len to read
     EndOfStream,
     /// not enough data was read. more should have been read according to ```RuntimeConfig.len```
@@ -26,14 +28,12 @@ pub const DeserializeError = error{
     UnexpectedData,
 };
 
-pub const Error = AnyReader.Error || DeserializeError;
-
 allocator: Allocator,
 underlying_reader: AnyReader,
 bytes_remaining: usize,
 ser_config: ConfigSerialization,
 
-pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: ConfigRuntime, comptime ser_config: ConfigSerialization) Self {
+pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: ReaderConfig, comptime ser_config: ConfigSerialization) BinReader {
     return .{
         .allocator = allocator,
         .underlying_reader = underlying_reader,
@@ -45,7 +45,7 @@ pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: 
 /// a typed proxy of the `underlying_reader.read`
 /// always use this function to read!
 /// TODO: should this be inlined? or is this just bloat?
-pub inline fn read(self: *Self, dest: []u8) Error!usize {
+pub inline fn read(self: *BinReader, dest: []u8) ReaderError!usize {
     const len_min = dest.len;
 
     if (len_min > self.bytes_remaining) {
@@ -64,14 +64,14 @@ pub inline fn read(self: *Self, dest: []u8) Error!usize {
 
 /// a typed proxy of the `underlying_reader.readByte`
 /// always use this function to read!
-pub inline fn readByte(self: *Self) Error!u8 {
+pub inline fn readByte(self: *BinReader) ReaderError!u8 {
     var result: [1]u8 = undefined;
     const amt_read = try self.read(result[0..]);
     if (amt_read < 1) return error.EndOfStream;
     return result[0];
 }
 
-pub inline fn readAny(self: *Self, comptime T: type) Error!T {
+pub inline fn readAny(self: *BinReader, comptime T: type) ReaderError!T {
     const rich_type = types.getRichType(T);
 
     return switch (rich_type) {
@@ -96,7 +96,7 @@ pub inline fn readAny(self: *Self, comptime T: type) Error!T {
 }
 
 /// inefficient way to use bool. Underlying data is aligned to u8
-pub inline fn readBool(self: *Self) Error!bool {
+pub inline fn readBool(self: *BinReader) ReaderError!bool {
     const single: u8 = try self.readByte();
 
     if (single == 1) {
@@ -113,7 +113,7 @@ test readBool {
     var buff: [3]u8 = .{ 0b0, 0b1, 0b1000 };
     var rw = std.io.fixedBufferStream(&buff);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 3 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 3 }, test_config);
 
     try rw.seekTo(0);
     try testing.expectEqual(false, try reader.readBool());
@@ -123,7 +123,7 @@ test readBool {
     try testing.expectError(error.LengthMismatch, reader.readBool());
 }
 
-pub inline fn readFloat(self: *Self, comptime T: type) Error!T {
+pub inline fn readFloat(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkFloat(T);
 
     const IntType = switch (@bitSizeOf(T)) {
@@ -149,7 +149,7 @@ test readFloat {
     const float_encoded: u64 = @bitCast(@as(f64, 123.456)); // bitcast to encode it!
     try rw.writer().writeInt(u64, float_encoded, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = @divExact(64, 8) }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(64, 8) }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readFloat(f64);
@@ -157,7 +157,7 @@ test readFloat {
 }
 
 // TODO: for now the size must be divisble by 8 exactly
-pub inline fn readInt(self: *Self, comptime T: type) Error!T {
+pub inline fn readInt(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkInt(T);
 
     const byte_count = @divExact(@typeInfo(T).Int.bits, 8);
@@ -165,7 +165,7 @@ pub inline fn readInt(self: *Self, comptime T: type) Error!T {
 
     _ = try self.read(&buff);
 
-    return mem.readInt(T, &buff, self.ser_config.endian);
+    return std.mem.readInt(T, &buff, self.ser_config.endian);
 }
 
 test readInt {
@@ -175,14 +175,14 @@ test readInt {
 
     try rw.writer().writeInt(u40, 123, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = @divExact(40, 8) }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(40, 8) }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readInt(u40);
     try testing.expectEqual(123, res);
 }
 
-pub inline fn readOptional(self: *Self, comptime T: type) Error!?T {
+pub inline fn readOptional(self: *BinReader, comptime T: type) ReaderError!?T {
     const has_value = try self.readBool();
     if (has_value) {
         return try self.readAny(T);
@@ -199,14 +199,14 @@ test readOptional {
     try rw.writer().writeInt(u8, 1, test_config.endian); // non-null value
     try rw.writer().writeInt(u64, 123, test_config.endian); // non-null value
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = @divExact(8 + 8 + 64, 8) }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(8 + 8 + 64, 8) }, test_config);
 
     try rw.seekTo(0);
     try testing.expectEqual(null, try reader.readOptional(u64));
     try testing.expectEqual(123, try reader.readOptional(u64));
 }
 
-pub inline fn readEnum(self: *Self, comptime T: type) Error!T {
+pub inline fn readEnum(self: *BinReader, comptime T: type) ReaderError!T {
     comptime types.checkEnum(T);
 
     if (std.meta.hasFn(T, "deserialize")) {
@@ -233,7 +233,7 @@ test "readEnum exhaustive" {
     try rw.writer().writeInt(u8, 0, test_config.endian);
     try rw.writer().writeInt(u8, 1, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 2 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 2 }, test_config);
 
     try rw.seekTo(0);
     try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
@@ -250,7 +250,7 @@ test "readEnum non-exhaustive" {
     try rw.writer().writeInt(u8, 0, test_config.endian);
     try rw.writer().writeInt(u8, 1, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 2 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 2 }, test_config);
 
     try rw.seekTo(0);
     try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
@@ -265,7 +265,7 @@ test "readEnum with custom deserialize function" {
         // oh boy, this is, in my humble opinion, a rough side of zig
         // its not possible to type it, and using anytype is very hard.
         // major refactor must be done soon, to use AnyReader interface...
-        pub fn deserialize(reader: *Self) Self.Error!@This() {
+        pub fn deserialize(reader: *BinReader) BinReader.ReaderError!@This() {
             const val = try reader.readByte();
             if (val == 100) {
                 return .a;
@@ -285,7 +285,7 @@ test "readEnum with custom deserialize function" {
     try rw.writer().writeInt(u8, 101, test_config.endian);
     try rw.writer().writeInt(u8, 42, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
@@ -293,7 +293,7 @@ test "readEnum with custom deserialize function" {
     try testing.expectError(error.UnexpectedData, reader.readEnum(EnumType));
 }
 
-pub inline fn readUnion(self: *Self, comptime T: type) Error!T {
+pub inline fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkUnion(T);
 
     if (std.meta.hasFn(T, "deserialize")) {
@@ -333,7 +333,7 @@ test "union" {
     try rw.writer().writeInt(u16, 1, test_config.endian); // enum tag, no value
     try rw.writer().writeInt(u16, 4, test_config.endian); // bad enum tag
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     try testing.expectEqual(UnionType{ .a = 123 }, try reader.readUnion(UnionType));
@@ -341,7 +341,7 @@ test "union" {
     try testing.expectError(error.UnexpectedData, reader.readUnion(UnionType));
 }
 
-pub inline fn readStruct(self: *Self, comptime T: type) Error!T {
+pub inline fn readStruct(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkStruct(T);
 
     if (std.meta.hasFn(T, "deserialize")) {
@@ -377,7 +377,7 @@ test "readStruct" {
     try rw.writer().writeInt(u64, 123, test_config.endian); // a value
     try rw.writer().writeInt(i40, -44, test_config.endian); // b value
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readStruct(StructT);
@@ -394,7 +394,7 @@ test "readStruct tuple" {
     try rw.writer().writeInt(u64, 123, test_config.endian); // a value
     try rw.writer().writeInt(i40, -44, test_config.endian); // b value
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readStruct(TupleType);
@@ -404,13 +404,13 @@ test "readStruct tuple" {
 
 /// TODO: check endianess here
 /// like the writer: writeStructEndian
-pub inline fn readStructPacked(self: *Self, comptime T: type) anyerror!T {
+pub inline fn readStructPacked(self: *BinReader, comptime T: type) anyerror!T {
     types.checkStructPacked(T);
 
     var result: [1]T = undefined;
 
     // const packed_size = @divExact(@bitSizeOf(T), 8);
-    _ = try self.read(mem.sliceAsBytes(result[0..]));
+    _ = try self.read(std.mem.sliceAsBytes(result[0..]));
     return result[0];
 }
 
@@ -423,7 +423,7 @@ test "struct packed" {
 
     try rw.writer().writeStruct(StructT{ .a = 10, .b = .z });
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readStructPacked(StructT);
@@ -431,7 +431,7 @@ test "struct packed" {
     try testing.expectEqual(.z, res.b);
 }
 
-pub inline fn readArray(self: *Self, comptime T: type) anyerror!T {
+pub inline fn readArray(self: *BinReader, comptime T: type) anyerror!T {
     const arrayInfo = @typeInfo(T).Array;
 
     var result: T = undefined;
@@ -457,7 +457,7 @@ test readArray {
     try rw.writer().writeInt(u64, 123, test_config.endian); // a value
     try rw.writer().writeInt(u64, 80, test_config.endian); // b value
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readArray(ArrayType);
@@ -469,7 +469,7 @@ test readArray {
 /// caller owns memory
 /// Array will be deinitialized on failure
 /// TODO: each item must be deinited automatically as well when error occurs
-pub inline fn readSlice(self: *Self, comptime T: type) Error![]T {
+pub inline fn readSlice(self: *BinReader, comptime T: type) ReaderError![]T {
     var array_list = try self.readArrayListUnmanaged(T);
     return array_list.toOwnedSlice(self.allocator);
 }
@@ -483,7 +483,7 @@ test readSlice {
     try rw.writer().writeInt(u16, 123, test_config.endian);
     try rw.writer().writeInt(u16, 42, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readSlice(u16);
@@ -495,7 +495,7 @@ test readSlice {
 
 /// Array will be deinitialized on failure
 /// TODO: each item must be deinited automatically when error occurs
-pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) Error!std.ArrayListUnmanaged(T) {
+pub inline fn readArrayListUnmanaged(self: *BinReader, comptime T: type) ReaderError!std.ArrayListUnmanaged(T) {
     const len = try self.readInt(SliceLen);
 
     // it would be nice to calculate the maximum allowed size from the bytes remaining
@@ -522,7 +522,7 @@ test "readArrayListUnmanaged" {
     try rw.writer().writeInt(u64, 100, test_config.endian);
     try rw.writer().writeInt(u64, 101, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     var res = try reader.readArrayListUnmanaged(u64);
@@ -533,7 +533,7 @@ test "readArrayListUnmanaged" {
     try testing.expectEqual(101, res.items[1]);
 }
 
-pub inline fn readArrayList(self: *Self, comptime T: type) Error!std.ArrayList(T) {
+pub inline fn readArrayList(self: *BinReader, comptime T: type) ReaderError!std.ArrayList(T) {
     var unmanaged = try self.readArrayListUnmanaged(T);
     return unmanaged.toManaged(self.allocator);
 }
@@ -547,7 +547,7 @@ test "readArrayList" {
     try rw.writer().writeInt(u64, 100, test_config.endian);
     try rw.writer().writeInt(u64, 101, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     var res = try reader.readArrayList(u64);
@@ -558,7 +558,7 @@ test "readArrayList" {
     try testing.expectEqual(101, res.items[1]);
 }
 
-pub inline fn readString(self: *Self) Error![]const u8 {
+pub inline fn readString(self: *BinReader) ReaderError![]const u8 {
     const len = try self.readInt(SliceLen);
 
     var list = try std.ArrayList(u8).initCapacity(self.allocator, len);
@@ -582,7 +582,7 @@ test readString {
     try rw.writer().writeInt(SliceLen, 11, test_config.endian);
     _ = try rw.writer().write("hello world");
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readString();
@@ -592,7 +592,7 @@ test readString {
 
 /// Reads a pointer and returns a pointer
 /// Type T MUST be a pointer type, and it returns a pointer too
-pub inline fn readPointer(self: *Self, comptime T: type) Error!T {
+pub inline fn readPointer(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkPointerSingle(T);
 
     // FIXME: this is broken...
@@ -610,7 +610,7 @@ test readPointer {
 
     try rw.writer().writeInt(u64, 123, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     const res = try reader.readPointer(*u64);
@@ -619,7 +619,7 @@ test readPointer {
     try testing.expectEqual(@as(u64, 123), res.*);
 }
 
-pub inline fn readHashMapUnmanaged(self: *Self, comptime K: type, comptime V: type) Error!std.AutoHashMapUnmanaged(K, V) {
+pub inline fn readHashMapUnmanaged(self: *BinReader, comptime K: type, comptime V: type) ReaderError!std.AutoHashMapUnmanaged(K, V) {
     // or it gives me a hashmap and I append to it!
     // TODO: check for presence of unmanaged: Unmanaged on it. If unmanaged exists, that means the underlying structure is managed
     const len = try self.readInt(SliceLen);
@@ -658,7 +658,7 @@ test "readHashmapUnmanaged" {
     try rw.writer().writeInt(u32, 2, test_config.endian);
     try rw.writer().writeInt(u64, 20, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     var res = try reader.readHashMapUnmanaged(u32, u64);
@@ -672,7 +672,7 @@ test "readHashmapUnmanaged" {
 /// Will return an autohashmap
 /// TODO: special case must be taken when string is the key!
 /// Note: this assumes that there are no duplicate keys!
-pub inline fn readHashMap(self: *Self, comptime K: type, comptime V: type) Error!std.AutoHashMap(K, V) {
+pub inline fn readHashMap(self: *BinReader, comptime K: type, comptime V: type) ReaderError!std.AutoHashMap(K, V) {
     const unmanaged = try self.readHashMapUnmanaged(K, V);
     return unmanaged.promote(self.allocator);
 }
@@ -691,7 +691,7 @@ test "readHashmap" {
     try rw.writer().writeInt(u32, 2, test_config.endian);
     try rw.writer().writeInt(u64, 20, test_config.endian);
 
-    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
 
     try rw.seekTo(0);
     var res = try reader.readHashMap(u32, u64);
