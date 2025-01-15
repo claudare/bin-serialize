@@ -95,6 +95,38 @@ test writeBool {
     try testing.expectEqual(0, buff[1]);
 }
 
+pub inline fn writeFloat(self: *BinWriter, value: anytype) WriterError!void {
+    const T = @TypeOf(value);
+    types.checkFloat(T);
+
+    const IntType = switch (@bitSizeOf(T)) {
+        16 => u16,
+        32 => u32,
+        64 => u64,
+        80 => u80,
+        128 => u128,
+        else => unreachable,
+    };
+
+    const float_encoded: IntType = @bitCast(value);
+
+    _ = try self.writeInt(float_encoded);
+}
+
+test writeFloat {
+    const a = testing.allocator;
+    var buff: [10]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try rw.seekTo(0);
+    try writer.writeFloat(@as(f64, 123.456));
+
+    try rw.seekTo(0);
+    try testing.expectEqual(123.456, @as(f64, @bitCast(try rw.reader().readInt(u64, test_config.endian))));
+}
+
 pub inline fn writeInt(self: *BinWriter, value: anytype) WriterError!void {
     const T = @TypeOf(value);
     types.checkInt(T);
