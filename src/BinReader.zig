@@ -6,15 +6,14 @@ const AnyReader = std.io.AnyReader;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
+const SliceLen = @import("config.zig").SliceLen;
 const ConfigSerialization = @import("config.zig").ConfigSerialization;
 const ConfigRuntime = @import("config.zig").ConfigRuntime;
 const types = @import("types.zig");
-
 const Self = @This();
 
 const test_config = ConfigSerialization{
     .endian = .big,
-    .slice_len_bitsize = 16,
 };
 
 // custom errors
@@ -470,9 +469,9 @@ test readArray {
 /// caller owns memory
 /// Array will be deinitialized on failure
 /// TODO: each item must be deinited automatically as well when error occurs
-pub inline fn readSlice(self: *Self, comptime T: type) anyerror![]T {
+pub inline fn readSlice(self: *Self, comptime T: type) Error![]T {
     var array_list = try self.readArrayListUnmanaged(T);
-    return array_list.toOwnedSlice();
+    return array_list.toOwnedSlice(self.allocator);
 }
 
 test readSlice {
@@ -480,7 +479,7 @@ test readSlice {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(test_config.SliceLenType(), 2, test_config.endian);
+    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
     try rw.writer().writeInt(u16, 123, test_config.endian);
     try rw.writer().writeInt(u16, 42, test_config.endian);
 
@@ -496,13 +495,8 @@ test readSlice {
 
 /// Array will be deinitialized on failure
 /// TODO: each item must be deinited automatically as well when error occurs
-pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) anyerror!std.ArrayListUnmanaged(T) {
-    // woops... this must be comptime known, so the ser_config actually needs to be comptime
-    // but then each struct MUST provide a correct SliceLenType to the underlying type
-    // which makes the use of this library non-portable, or make it depend on some external module...
-    const LenT = self.ser_config.SliceLenType();
-
-    const len = try self.readInt(LenT);
+pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) Error!std.ArrayListUnmanaged(T) {
+    const len = try self.readInt(SliceLen);
 
     // it would be nice to calculate the maximum allowed size from the bytes remaining
     // this is only possible for single non-complex type
