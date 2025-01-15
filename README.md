@@ -13,10 +13,10 @@ The following types are currently supported/planned:
 - [x] Struct
 - [x] StructPacked
 - [x] Array
-- [ ] Slice
+- [x] Slice
+- [x] ArrayList
+- [x] ArrayListUnmanaged
 - [ ] String
 - [ ] PointerSingle
-- [ ] ArrayList
-- [ ] ArrayListUnmanaged
 - [ ] HashMap
 - [ ] HashMapUnmanaged

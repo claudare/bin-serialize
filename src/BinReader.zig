@@ -494,7 +494,7 @@ test readSlice {
 }
 
 /// Array will be deinitialized on failure
-/// TODO: each item must be deinited automatically as well when error occurs
+/// TODO: each item must be deinited automatically when error occurs
 pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) Error!std.ArrayListUnmanaged(T) {
     const len = try self.readInt(SliceLen);
 
@@ -511,6 +511,51 @@ pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) Error!std.Ar
     }
 
     return unmanaged;
+}
+
+test "readArrayListUnmanaged" {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
+    try rw.writer().writeInt(u64, 100, test_config.endian);
+    try rw.writer().writeInt(u64, 101, test_config.endian);
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    var res = try reader.readArrayListUnmanaged(u64);
+    defer res.deinit(a);
+
+    try testing.expectEqual(2, res.items.len);
+    try testing.expectEqual(100, res.items[0]);
+    try testing.expectEqual(101, res.items[1]);
+}
+
+pub inline fn readArrayList(self: *Self, comptime T: type) Error!std.ArrayList(T) {
+    var unmanaged = try self.readArrayListUnmanaged(T);
+    return unmanaged.toManaged(self.allocator);
+}
+
+test "readArrayList" {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
+    try rw.writer().writeInt(u64, 100, test_config.endian);
+    try rw.writer().writeInt(u64, 101, test_config.endian);
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    var res = try reader.readArrayList(u64);
+    defer res.deinit();
+
+    try testing.expectEqual(2, res.items.len);
+    try testing.expectEqual(100, res.items[0]);
+    try testing.expectEqual(101, res.items[1]);
 }
 
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
@@ -573,14 +618,6 @@ pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) Error!std.Ar
 //             }
 
 //             return list.toOwnedSlice();
-//         }
-
-//         /// This is a public function which the developer uses when manually encoding
-//         /// this takes in a type of item, but then we loose the ability to construct it
-//         /// upto the specifications
-//         pub inline fn readArrayList(self: *Self, comptime TItem: type) anyerror!std.ArrayList(TItem) {
-//             var unmanaged = try self.readArrayListUnmanaged(TItem);
-//             return unmanaged.toManaged(self.allocator);
 //         }
 
 //         pub inline fn readHashMapUnmanaged(self: *Self, comptime K: type, comptime V: type) anyerror!std.AutoHashMapUnmanaged(K, V) {
@@ -690,64 +727,6 @@ pub inline fn readArrayListUnmanaged(self: *Self, comptime T: type) Error!std.Ar
 //         defer a.destroy(res);
 
 //         try testing.expectEqual(@as(u64, 123), res.*);
-//     }
-// }
-
-// test "arraylist" {
-//     const T = struct {
-//         arrayList: std.ArrayList(u64),
-//         arrayListUnmanaged: std.ArrayListUnmanaged(u64),
-//     };
-
-//     // lets encode it manually...
-//     const a = testing.allocator;
-
-//     var buff: [100]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     try rw.writer().writeInt(test_config.SliceLenType, 2, test_config.endian);
-//     try rw.writer().writeInt(u64, 100, test_config.endian);
-//     try rw.writer().writeInt(u64, 101, test_config.endian);
-
-//     try rw.writer().writeInt(test_config.SliceLenType, 2, test_config.endian);
-//     try rw.writer().writeInt(u64, 200, test_config.endian);
-//     try rw.writer().writeInt(u64, 201, test_config.endian);
-
-//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
-
-//     {
-//         try rw.seekTo(0);
-//         var res = try reader.readAny(T);
-//         defer res.arrayList.deinit();
-//         defer res.arrayListUnmanaged.deinit(a);
-
-//         try testing.expectEqual(2, res.arrayList.items.len);
-//         try testing.expectEqual(100, res.arrayList.items[0]);
-//         try testing.expectEqual(101, res.arrayList.items[1]);
-
-//         try testing.expectEqual(2, res.arrayListUnmanaged.items.len);
-//         try testing.expectEqual(200, res.arrayListUnmanaged.items[0]);
-//         try testing.expectEqual(201, res.arrayListUnmanaged.items[1]);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         var res = try reader.readArrayList(u64);
-//         defer res.deinit();
-
-//         try testing.expectEqual(2, res.items.len);
-//         try testing.expectEqual(100, res.items[0]);
-//         try testing.expectEqual(101, res.items[1]);
-//     }
-
-//     {
-//         try rw.seekTo(0);
-//         var res = try reader.readArrayListUnmanaged(u64);
-//         defer res.deinit(a);
-
-//         try testing.expectEqual(2, res.items.len);
-//         try testing.expectEqual(100, res.items[0]);
-//         try testing.expectEqual(101, res.items[1]);
 //     }
 // }
 
