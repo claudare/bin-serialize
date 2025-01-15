@@ -558,6 +558,38 @@ test "readArrayList" {
     try testing.expectEqual(101, res.items[1]);
 }
 
+pub inline fn readString(self: *Self) Error![]const u8 {
+    const len = try self.readInt(SliceLen);
+
+    var list = try std.ArrayList(u8).initCapacity(self.allocator, len);
+    errdefer list.deinit();
+
+    var read_bytes: u32 = 0;
+
+    while (read_bytes < len) : (read_bytes += 1) {
+        const v = try self.readByte();
+        list.appendAssumeCapacity(v);
+    }
+
+    return list.toOwnedSlice();
+}
+
+test readString {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    try rw.writer().writeInt(SliceLen, 11, test_config.endian);
+    _ = try rw.writer().write("hello world");
+
+    var reader = Self.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+
+    try rw.seekTo(0);
+    const res = try reader.readString();
+    defer a.free(res);
+    try testing.expectEqualStrings("hello world", res);
+}
+
 // pub fn BinReader(comptime ser_config: SerializationConfig) type {
 //     return struct {
 
@@ -600,25 +632,6 @@ test "readArrayList" {
 //         /// the allocated memory should be shared. Maximum length is fixed and initialized at startup
 //         /// so that the Reader now becomes stateful!
 //         /// but max len per field is enforced
-//         pub inline fn readString(self: *Self) anyerror![]const u8 {
-//             const len = try self.readInt(ser_config.SliceLenType);
-
-//             // TODO: check length
-
-//             var list = try std.ArrayList(u8).initCapacity(self.allocator, len);
-//             errdefer list.deinit();
-
-//             var read_bytes: u32 = 0;
-
-//             while (read_bytes < len) : (read_bytes += 1) {
-//                 const v = self.underlying_reader.readByte() catch {
-//                     return error.DataIsTooShort;
-//                 };
-//                 list.appendAssumeCapacity(v);
-//             }
-
-//             return list.toOwnedSlice();
-//         }
 
 //         pub inline fn readHashMapUnmanaged(self: *Self, comptime K: type, comptime V: type) anyerror!std.AutoHashMapUnmanaged(K, V) {
 //             // or it gives me a hashmap and I append to it!
@@ -653,24 +666,6 @@ test "readArrayList" {
 // }
 
 // TODO: REFACTOR ALL THESE
-
-// test "string" {
-//     const a = testing.allocator;
-//     var buff: [100]u8 = undefined;
-//     var rw = std.io.fixedBufferStream(&buff);
-
-//     try rw.writer().writeInt(test_config.SliceLenType, 11, test_config.endian);
-//     _ = try rw.writer().write("hello world");
-
-//     var reader = Self.init(a, rw.reader().any(), .{.len=100}, test_config);
-
-//     {
-//         try rw.seekTo(0);
-//         const res = try reader.readString();
-//         defer a.free(res);
-//         try testing.expectEqualStrings("hello world", res);
-//     }
-// }
 
 // // TODO!!!
 // // test "string any detection" {

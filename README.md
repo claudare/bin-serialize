@@ -16,7 +16,7 @@ The following types are currently supported/planned:
 - [x] Slice
 - [x] ArrayList
 - [x] ArrayListUnmanaged
-- [ ] String
+- [x] String
 - [ ] PointerSingle
 - [ ] HashMap
 - [ ] HashMapUnmanaged
