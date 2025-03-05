@@ -375,3 +375,26 @@ test writeArray {
     try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
     try testing.expectEqual(80, rw.reader().readInt(u64, test_config.endian));
 }
+
+pub inline fn writeSlice(self: *BinWriter, T: type, items: []const T) WriterError!void {
+    try self.writeInt(SliceLen, @intCast(items.len));
+    for (items) |item| {
+        try self.writeAny(T, item);
+    }
+}
+
+test writeSlice {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    const slice = &[_]u16{ 123, 42 };
+    try writer.writeSlice(u16, slice);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_config.endian));
+    try testing.expectEqual(@as(u16, 123), rw.reader().readInt(u16, test_config.endian));
+    try testing.expectEqual(@as(u16, 42), rw.reader().readInt(u16, test_config.endian));
+}
