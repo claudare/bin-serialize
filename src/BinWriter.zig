@@ -419,6 +419,27 @@ test writeString {
     try testing.expectEqualStrings("hello world", &str_buff);
 }
 
+pub inline fn writePointer(self: *BinWriter, T: type, value: T) WriterError!void {
+    types.checkPointerSingle(T);
+    const ChildType = @typeInfo(T).Pointer.child;
+    try self.writeAny(ChildType, value.*);
+}
+
+test writePointer {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    const value: u64 = 123;
+    const ptr: *const u64 = &value;
+    try writer.writePointer(*const u64, ptr);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(@as(u64, 123), try rw.reader().readInt(u64, test_config.endian));
+}
+
 pub inline fn writeArrayList(self: *BinWriter, T: type, list: std.ArrayList(T)) WriterError!void {
     try self.writeSlice(T, list.items);
 }
