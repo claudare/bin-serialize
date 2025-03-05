@@ -443,6 +443,9 @@ test writePointer {
 pub inline fn writeArrayList(self: *BinWriter, T: type, list: std.ArrayList(T)) WriterError!void {
     try self.writeSlice(T, list.items);
 }
+pub inline fn writeArrayListUnmanaged(self: *BinWriter, T: type, list: std.ArrayListUnmanaged(T)) WriterError!void {
+    try self.writeSlice(T, list.items);
+}
 
 test writeArrayList {
     const a = testing.allocator;
@@ -457,30 +460,6 @@ test writeArrayList {
     try list.append(101);
 
     try writer.writeArrayList(u64, list);
-
-    try rw.seekTo(0);
-    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_config.endian));
-    try testing.expectEqual(@as(u64, 100), rw.reader().readInt(u64, test_config.endian));
-    try testing.expectEqual(@as(u64, 101), rw.reader().readInt(u64, test_config.endian));
-}
-
-pub inline fn writeArrayListUnmanaged(self: *BinWriter, T: type, list: std.ArrayListUnmanaged(T)) WriterError!void {
-    try self.writeSlice(T, list.items);
-}
-
-test writeArrayListUnmanaged {
-    const a = testing.allocator;
-    var buff: [100]u8 = undefined;
-    var rw = std.io.fixedBufferStream(&buff);
-
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
-
-    var list = std.ArrayListUnmanaged(u64){};
-    try list.append(a, 100);
-    try list.append(a, 101);
-    defer list.deinit(a);
-
-    try writer.writeArrayListUnmanaged(u64, list);
 
     try rw.seekTo(0);
     try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_config.endian));
