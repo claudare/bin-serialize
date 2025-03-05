@@ -19,5 +19,7 @@ pub const WriterError = BinWriter.WriterError;
 test {
     _ = @import("BinReader.zig");
     _ = @import("BinWriter.zig");
+    _ = @import("e2e_tests.zig");
+
     _ = @import("types.zig");
 }

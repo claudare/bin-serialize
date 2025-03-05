@@ -45,8 +45,8 @@ pub fn init(allocator: Allocator, underlying_writer: AnyWriter, runtime_config: 
 /// a typed proxy of the `underlying_reader.read`
 /// always use this function to read!
 /// TODO: should this be inlined? or is this just bloat?
-pub inline fn write(self: *BinWriter, dest: []const u8) WriterError!usize {
-    const write_len = dest.len;
+pub inline fn write(self: *BinWriter, bytes: []const u8) WriterError!usize {
+    const write_len = bytes.len;
 
     if (self.maybe_max_len) |max_len| {
         if (write_len + self.total_written > max_len) {
@@ -55,7 +55,7 @@ pub inline fn write(self: *BinWriter, dest: []const u8) WriterError!usize {
         }
     }
 
-    const len_written = try self.underlying_writer.write(dest);
+    const len_written = try self.underlying_writer.write(bytes);
     self.total_written += write_len;
 
     return len_written;
@@ -76,7 +76,7 @@ pub inline fn writeAny(self: *BinWriter, comptime T: type, value: T) WriterError
         .Array => self.writeArray(T, value),
         .Slice => |Child| self.writeSlice(Child, value),
         .String => self.writeString(value),
-        .PointerSingle => self.writePointer(T), // TODO
+        .PointerSingle => self.writePointer(T, value), // TODO
         .ArrayList => |Child| self.writeArrayList(Child, value),
         .ArrayListUnmanaged => |Child| self.writeArrayListUnmanaged(Child, value),
         .HashMap => |KV| self.writeHashMap(KV.K, KV.V, value),

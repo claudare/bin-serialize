@@ -45,8 +45,14 @@ pub fn checkEnum(T: type) void {
 }
 pub fn checkUnion(T: type) void {
     switch (@typeInfo(T)) {
-        .Union => |info| if (info.tag_type == null) {
-            @compileError("untagged union " ++ @typeName(T) ++ " is not supported");
+        .Union => |info| {
+            if (info.tag_type) |TagType| {
+                // TODO: check that TagType is of multiple of 8!
+                // this will enable better error reporting
+                _ = TagType;
+            } else {
+                @compileError("untagged union " ++ @typeName(T) ++ " is not supported");
+            }
         },
         else => @compileError("type " ++ @typeName(T) ++ " is not an union"),
     }
@@ -180,8 +186,8 @@ pub fn getRichType(comptime T: type) RichType {
                         if (info.is_const) {
                             return .{ .String = {} };
                         }
-
-                        @compileError("non const u8 slices ([]u8) are not implemented yet");
+                        return .{ .Slice = info.child };
+                        // @compileError("non const u8 slices ([]u8) are not implemented yet");
                     }
 
                     return .{ .Slice = info.child };

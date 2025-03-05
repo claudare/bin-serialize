@@ -47,13 +47,13 @@ pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: 
 /// a typed proxy of the `underlying_reader.read`
 /// always use this function to read!
 /// TODO: should this be inlined? or is this just bloat?
-pub inline fn read(self: *BinReader, dest: []u8) ReaderError!usize {
-    const len_min = dest.len;
+pub inline fn read(self: *BinReader, buffer: []u8) ReaderError!usize {
+    const len_min = buffer.len;
 
     if (len_min > self.bytes_remaining) {
         return error.LengthMismatch;
     }
-    const len_read = try self.underlying_reader.read(dest);
+    const len_read = try self.underlying_reader.read(buffer);
     if (len_read > self.bytes_remaining) {
         // TODO: this can technically never happen??
         debug.print("undefined edge case triggered!\n", .{});
