@@ -398,3 +398,23 @@ test writeSlice {
     try testing.expectEqual(@as(u16, 123), rw.reader().readInt(u16, test_config.endian));
     try testing.expectEqual(@as(u16, 42), rw.reader().readInt(u16, test_config.endian));
 }
+
+pub inline fn writeString(self: *BinWriter, value: []const u8) WriterError!void {
+    try self.writeSlice(u8, value);
+}
+
+test writeString {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try writer.writeString("hello world");
+
+    try rw.seekTo(0);
+    try testing.expectEqual(@as(SliceLen, 11), rw.reader().readInt(SliceLen, test_config.endian));
+    var str_buff: [11]u8 = undefined;
+    _ = try rw.reader().readAll(&str_buff);
+    try testing.expectEqualStrings("hello world", &str_buff);
+}
