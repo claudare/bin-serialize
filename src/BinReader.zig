@@ -324,7 +324,7 @@ pub inline fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
     return error.UnexpectedData;
 }
 
-test "union" {
+test readUnion {
     const UnionType = union(enum(u16)) { a: u64, b: void };
 
     const a = testing.allocator;
