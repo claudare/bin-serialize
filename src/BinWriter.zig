@@ -350,3 +350,28 @@ test writeStructPacked {
     try testing.expectEqual(10, res.a);
     try testing.expectEqual(.z, res.b);
 }
+
+pub inline fn writeArray(self: *BinWriter, T: type, value: T) WriterError!void {
+    types.checkArray(T);
+
+    const info = @typeInfo(T).Array;
+    for (value) |item| {
+        try self.writeAny(info.child, item);
+    }
+}
+
+test writeArray {
+    const ArrayType = [2]u64;
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try writer.writeArray(ArrayType, .{ 123, 80 });
+
+    try rw.seekTo(0);
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
+    try testing.expectEqual(80, rw.reader().readInt(u64, test_config.endian));
+}
