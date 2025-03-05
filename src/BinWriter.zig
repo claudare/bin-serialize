@@ -466,3 +466,42 @@ test writeArrayListUnmanaged {
     try testing.expectEqual(@as(u64, 100), rw.reader().readInt(u64, test_config.endian));
     try testing.expectEqual(@as(u64, 101), rw.reader().readInt(u64, test_config.endian));
 }
+
+pub inline fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std.AutoHashMapUnmanaged(K, V)) WriterError!void {
+    try self.writeInt(SliceLen, @intCast(map.count()));
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        try self.writeAny(K, entry.key_ptr.*);
+        try self.writeAny(V, entry.value_ptr.*);
+    }
+}
+
+pub inline fn writeHashMap(self: *BinWriter, K: type, V: type, map: std.AutoHashMap(K, V)) WriterError!void {
+    try self.writeHashMapUnmanaged(K, V, map.unmanaged);
+}
+
+test writeHashMap {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    var map = std.AutoHashMap(u32, u64).init(a);
+    defer map.deinit();
+    try map.put(1, 10);
+    try map.put(2, 20);
+
+    try writer.writeHashMap(u32, u64, map);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_config.endian));
+    const k1 = try rw.reader().readInt(u32, test_config.endian);
+    const v1 = try rw.reader().readInt(u64, test_config.endian);
+    const k2 = try rw.reader().readInt(u32, test_config.endian);
+    const v2 = try rw.reader().readInt(u64, test_config.endian);
+    try testing.expectEqual(@as(u32, 1), k1);
+    try testing.expectEqual(@as(u64, 10), v1);
+    try testing.expectEqual(@as(u32, 2), k2);
+    try testing.expectEqual(@as(u64, 20), v2);
+}
