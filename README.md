@@ -20,3 +20,6 @@ The following types are currently supported/planned:
 - [x] Pointer
 - [x] AutoHashMap
 - [x] AutoHashMapUnmanaged
+
+
+Bool, Float, Int, Optional, Enum, Union, Struct, StructPacked, Array, Slice, ArrayList, ArrayListUnmanaged, String, Pointer, AutoHashMap, AutoHashMapUnmanaged

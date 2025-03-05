@@ -14,7 +14,9 @@ const types = @import("types.zig");
 
 const BinWriter = @This();
 
-const test_config = config.test_config;
+const test_config = ConfigSerialization{
+    .endian = .little,
+};
 
 // FIXME: AnyReader.Error is anyerror... it doesnt help at all
 pub const WriterError = AnyWriter.Error || error{
@@ -57,6 +59,29 @@ pub inline fn write(self: *BinWriter, dest: []u8) WriterError!usize {
     self.total_written += write_len;
 
     return len_written;
+}
+
+pub inline fn writeAny(self: *BinWriter, comptime T: type, value: T) WriterError!void {
+    const rich_type = types.getRichType(T);
+
+    return switch (rich_type) {
+        .Bool => self.writeBool(value),
+        .Float => self.writeFloat(T, value),
+        .Int => self.writeInt(T, value),
+        .Optional => |Child| self.writeOptional(Child, value),
+        .Enum => self.writeEnum(T, value),
+        .Union => self.writeUnion(T, value),
+        .Struct => self.writeStruct(T, value),
+        .StructPacked => self.writeStructPacked(T, value),
+        .Array => self.writeArray(T, value),
+        .Slice => |Child| self.writeSlice(Child, value),
+        .String => self.writeString(value),
+        .PointerSingle => self.writePointer(T), // TODO
+        .ArrayList => |Child| self.writeArrayList(Child, value),
+        .ArrayListUnmanaged => |Child| self.writeArrayListUnmanaged(Child, value),
+        .HashMap => |KV| self.writeHashMap(KV.K, KV.V, value),
+        .HashMapUnmanaged => |KV| self.writeHashMapUnmanaged(KV.K, KV.V, value),
+    };
 }
 
 /// a typed proxy of the `underlying_reader.readByte`
@@ -146,4 +171,107 @@ test writeInt {
 
     try rw.seekTo(0);
     try testing.expectEqual(123, rw.reader().readInt(u32, test_config.endian));
+}
+
+pub inline fn writeOptional(self: *BinWriter, T: type, value: ?T) WriterError!void {
+    if (value) |v| {
+        try self.writeBool(true);
+        try self.writeAny(T, v);
+    } else {
+        try self.writeBool(false);
+    }
+}
+
+test writeOptional {
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try writer.writeOptional(u64, null);
+    try writer.writeOptional(u64, 123);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(0, rw.reader().readInt(u8, test_config.endian)); // null marker
+    try testing.expectEqual(1, rw.reader().readInt(u8, test_config.endian)); // non-null marker
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
+}
+
+pub inline fn writeEnum(self: *BinWriter, T: type, value: T) WriterError!void {
+    comptime types.checkEnum(T);
+
+    if (std.meta.hasFn(T, "serialize")) {
+        return try value.serialize(self);
+    }
+
+    const tag_type = @typeInfo(T).Enum.tag_type;
+    try self.writeInt(tag_type, @intFromEnum(value));
+}
+
+test "writeEnum" {
+    const EnumType = enum(u8) { a, b };
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try writer.writeEnum(EnumType, .a);
+    try writer.writeEnum(EnumType, .b);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(0, rw.reader().readInt(u8, test_config.endian));
+    try testing.expectEqual(1, rw.reader().readInt(u8, test_config.endian));
+}
+
+pub inline fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
+    types.checkUnion(T);
+
+    if (std.meta.hasFn(T, "serialize")) {
+        return try value.serialize(self);
+    }
+
+    const info = @typeInfo(T).Union;
+
+    const tag = std.meta.activeTag(value);
+
+    // this is taken from the json serialization
+    // not sure how to test for untagged union
+    if (info.tag_type) |UnionTagType| {
+        inline for (info.fields) |u_field| {
+            if (value == @field(UnionTagType, u_field.name)) {
+                try self.writeInt(@typeInfo(UnionTagType).Enum.tag_type, @intFromEnum(tag));
+
+                if (u_field.type == void) {} else {
+                    try self.writeAny(u_field.type, @field(value, u_field.name));
+                }
+                break;
+            }
+        } else {
+            unreachable; // No active tag?
+        }
+        return;
+    } else {
+        @compileError("Unable to serialize untagged union '" ++ @typeName(T) ++ "'");
+    }
+}
+
+test "writeUnion" {
+    const UnionType = union(enum(u16)) { a: u64, b: void };
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try writer.writeUnion(UnionType, UnionType{ .a = 123 });
+    try writer.writeUnion(UnionType, .b);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(0, rw.reader().readInt(u16, test_config.endian));
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
+    try testing.expectEqual(1, rw.reader().readInt(u16, test_config.endian));
 }

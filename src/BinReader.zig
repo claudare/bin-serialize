@@ -14,7 +14,9 @@ const types = @import("types.zig");
 
 const BinReader = @This();
 
-const test_config = config.test_config;
+const test_config = ConfigSerialization{
+    .endian = .little,
+};
 
 // FIXME: AnyReader.Error is anyerror... it doesnt help at all
 pub const ReaderError = AnyReader.Error || error{
@@ -78,17 +80,17 @@ pub inline fn readAny(self: *BinReader, comptime T: type) ReaderError!T {
         .Bool => self.readBool(),
         .Float => self.readFloat(T),
         .Int => self.readInt(T),
-        .Optional => |T2| self.readOptional(T2),
+        .Optional => |Child| self.readOptional(Child),
         .Enum => self.readEnum(T),
         .Union => self.readUnion(T),
         .Struct => self.readStruct(T),
         .StructPacked => self.readStructPacked(T),
         .Array => self.readArray(T),
-        .Slice => |T2| self.readSlice(T2),
+        .Slice => |Child| self.readSlice(Child),
         .String => self.readString(),
         .PointerSingle => self.readPointer(T),
-        .ArrayList => |T2| self.readArrayList(T2),
-        .ArrayListUnmanaged => |T2| self.readArrayListUnmanaged(T2),
+        .ArrayList => |Child| self.readArrayList(Child),
+        .ArrayListUnmanaged => |Child| self.readArrayListUnmanaged(Child),
         .HashMap => |KV| self.readHashMap(KV.K, KV.V),
         .HashMapUnmanaged => |KV| self.readHashMapUnmanaged(KV.K, KV.V),
         // else => @compileError("type " ++ @typeName(T) ++ " is not yet implemented"),
@@ -300,15 +302,16 @@ pub inline fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
         return T.deserialize(self);
     }
 
-    const unionInfo = @typeInfo(T).Union;
+    const union_info = @typeInfo(T).Union;
 
-    const tag_type = unionInfo.tag_type.?; // its non-null from checkUnion
+    const tag_type = union_info.tag_type.?; // its non-null from checkUnion
 
     const t_info = @typeInfo(tag_type).Enum;
     const size = t_info.tag_type;
     const int_value = try self.readInt(size);
 
-    inline for (unionInfo.fields, 0..) |field, i| {
+    // TODO: this could be wrong if different order is used?
+    inline for (union_info.fields, 0..) |field, i| {
         if (i == int_value) {
             if (field.type == void) {
                 return @unionInit(T, field.name, {});
