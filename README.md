@@ -12,9 +12,9 @@ Fetch it via
 
 ```bash
 # specific version (TODO, this does not exist yet)
-zig fetch https://github.com/claudare/bin-serialize/archive/refs/tags/0.0.1.tar.gz
+zig fetch --save https://github.com/claudare/bin-serialize/archive/refs/tags/0.0.1.tar.gz
 # or main branch
-zig fetch https://github.com/claudare/bin-serialize/archive/refs/heads/main.tar.gz
+zig fetch --save https://github.com/claudare/bin-serialize/archive/refs/heads/main.tar.gz
 ```
 
 Now add to your `build.zig`
