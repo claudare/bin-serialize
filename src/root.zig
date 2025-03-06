@@ -9,12 +9,12 @@ pub const SliceLen = config.SliceLen;
 // reader
 pub const BinReader = @import("BinReader.zig");
 pub const ReaderConfig = config.ReaderConfig;
-pub const ReaderError = BinReader.ReaderError;
+pub const ReaderError = BinReader.Error;
 
 // writer
 pub const BinWriter = @import("BinWriter.zig");
 pub const WriterConfig = config.WriterConfig;
-pub const WriterError = BinWriter.WriterError;
+pub const WriterError = BinWriter.Error;
 
 test {
     _ = @import("BinReader.zig");

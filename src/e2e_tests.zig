@@ -147,12 +147,12 @@ test "custom serialization" {
 
         // the self parameter needs to either be *const or no pointer... I still need to check this more
         // in a real-world project
-        pub fn binWrite(self: *const @This(), writer: *BinWriter) BinWriter.WriterError!void {
+        pub fn binWrite(self: *const @This(), writer: *BinWriter) BinWriter.Error!void {
             try writer.writeArray([3]u8, self.a);
             try writer.writeInt(u8, @intCast(self.b));
         }
 
-        pub fn binRead(reader: *BinReader) BinReader.ReaderError!@This() {
+        pub fn binRead(reader: *BinReader) BinReader.Error!@This() {
             const a = try reader.readArray([3]u8);
             const b: u3 = @intCast(try reader.readInt(u8));
             return .{ .a = a, .b = b };

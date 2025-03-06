@@ -19,7 +19,7 @@ const test_config = ConfigSerialization{
 };
 
 // FIXME: AnyReader.Error is anyerror... it doesnt help at all
-pub const WriterError = AnyWriter.Error || error{
+pub const Error = AnyWriter.Error || error{
     /// present when allocator is used
     OutOfMemory,
     /// a limit of max_len was reached
@@ -44,7 +44,7 @@ pub fn init(allocator: Allocator, underlying_writer: AnyWriter, runtime_config: 
 
 /// a typed proxy of the `underlying_reader.read`
 /// always use this function to read!
-pub inline fn write(self: *BinWriter, bytes: []const u8) WriterError!usize {
+pub inline fn write(self: *BinWriter, bytes: []const u8) Error!usize {
     const write_len = bytes.len;
 
     if (self.maybe_max_len) |max_len| {
@@ -61,13 +61,13 @@ pub inline fn write(self: *BinWriter, bytes: []const u8) WriterError!usize {
 }
 /// a typed proxy of the `underlying_reader.readByte`
 /// always use this function to read!
-pub inline fn writeByte(self: *BinWriter, value: u8) WriterError!u8 {
+pub inline fn writeByte(self: *BinWriter, value: u8) Error!u8 {
     var result = [1]u8{value};
     const amt_written = try self.write(result[0..]);
     if (amt_written < 1) return error.EndOfStream;
     return result[0];
 }
-pub inline fn writeAny(self: *BinWriter, comptime T: type, value: T) WriterError!void {
+pub inline fn writeAny(self: *BinWriter, comptime T: type, value: T) Error!void {
     const rich_type = types.getRichType(T);
 
     return switch (rich_type) {
@@ -90,7 +90,7 @@ pub inline fn writeAny(self: *BinWriter, comptime T: type, value: T) WriterError
     };
 }
 
-pub fn writeBool(self: *BinWriter, value: bool) WriterError!void {
+pub fn writeBool(self: *BinWriter, value: bool) Error!void {
     if (value) {
         _ = try self.writeByte(1);
     } else {
@@ -117,7 +117,7 @@ test writeBool {
     try testing.expectEqual(0, buff[1]);
 }
 
-pub fn writeFloat(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeFloat(self: *BinWriter, T: type, value: T) Error!void {
     types.checkFloat(T);
 
     const IntType = switch (@bitSizeOf(T)) {
@@ -148,7 +148,7 @@ test writeFloat {
     try testing.expectEqual(123.456, @as(f64, @bitCast(try rw.reader().readInt(u64, test_config.endian))));
 }
 
-pub fn writeInt(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeInt(self: *BinWriter, T: type, value: T) Error!void {
     types.checkInt(T);
 
     var bytes: [@divExact(@typeInfo(T).Int.bits, 8)]u8 = undefined;
@@ -170,7 +170,7 @@ test writeInt {
     try testing.expectEqual(123, rw.reader().readInt(u32, test_config.endian));
 }
 
-pub fn writeOptional(self: *BinWriter, T: type, value: ?T) WriterError!void {
+pub fn writeOptional(self: *BinWriter, T: type, value: ?T) Error!void {
     if (value) |v| {
         try self.writeBool(true);
         try self.writeAny(T, v);
@@ -195,7 +195,7 @@ test writeOptional {
     try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
 }
 
-pub fn writeEnum(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeEnum(self: *BinWriter, T: type, value: T) Error!void {
     comptime types.checkEnum(T);
 
     if (std.meta.hasFn(T, "binWrite")) {
@@ -223,7 +223,7 @@ test "writeEnum" {
     try testing.expectEqual(1, rw.reader().readInt(u8, test_config.endian));
 }
 
-pub fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeUnion(self: *BinWriter, T: type, value: T) Error!void {
     types.checkUnion(T);
 
     if (std.meta.hasFn(T, "binWrite")) {
@@ -290,7 +290,7 @@ test "writeUnion explicit" {
     try testing.expectEqual(80, rw.reader().readInt(u16, test_config.endian));
 }
 
-pub fn writeStruct(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeStruct(self: *BinWriter, T: type, value: T) Error!void {
     types.checkStruct(T);
 
     if (std.meta.hasFn(T, "binWrite")) {
@@ -302,7 +302,6 @@ pub fn writeStruct(self: *BinWriter, T: type, value: T) WriterError!void {
     // if (std.meta.hasFn(T, "jsonStringify")) {
     //     return value.jsonStringify(self);
     // }
-
 
     // std.json.stringify(value: anytype, options: StringifyOptions, out_stream: anytype)
     // std.json.innerParse(comptime T: type, allocator: Allocator, source: anytype, options: ParseOptions)
@@ -336,7 +335,7 @@ test writeStruct {
     try testing.expectEqual(@as(i40, -44), rw.reader().readInt(i40, test_config.endian));
 }
 
-pub fn writeStructPacked(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeStructPacked(self: *BinWriter, T: type, value: T) Error!void {
     types.checkStructPacked(T);
 
     _ = try self.write(std.mem.asBytes(&value));
@@ -374,7 +373,7 @@ test writeStructPacked {
     try testing.expectEqual(.z, res.b);
 }
 
-pub fn writeArray(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeArray(self: *BinWriter, T: type, value: T) Error!void {
     types.checkArray(T);
 
     const info = @typeInfo(T).Array;
@@ -399,7 +398,7 @@ test writeArray {
     try testing.expectEqual(80, rw.reader().readInt(u64, test_config.endian));
 }
 
-pub fn writeSlice(self: *BinWriter, T: type, items: []const T) WriterError!void {
+pub fn writeSlice(self: *BinWriter, T: type, items: []const T) Error!void {
     try self.writeInt(SliceLen, @intCast(items.len));
     for (items) |item| {
         try self.writeAny(T, item);
@@ -422,7 +421,7 @@ test writeSlice {
     try testing.expectEqual(@as(u16, 42), rw.reader().readInt(u16, test_config.endian));
 }
 
-pub fn writeString(self: *BinWriter, value: []const u8) WriterError!void {
+pub fn writeString(self: *BinWriter, value: []const u8) Error!void {
     try self.writeSlice(u8, value);
 }
 
@@ -442,7 +441,7 @@ test writeString {
     try testing.expectEqualStrings("hello world", &str_buff);
 }
 
-pub fn writePointer(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writePointer(self: *BinWriter, T: type, value: T) Error!void {
     types.checkPointerSingle(T);
     const ChildType = @typeInfo(T).Pointer.child;
     try self.writeAny(ChildType, value.*);
@@ -463,10 +462,10 @@ test writePointer {
     try testing.expectEqual(@as(u64, 123), try rw.reader().readInt(u64, test_config.endian));
 }
 
-pub fn writeArrayList(self: *BinWriter, T: type, list: std.ArrayList(T)) WriterError!void {
+pub fn writeArrayList(self: *BinWriter, T: type, list: std.ArrayList(T)) Error!void {
     try self.writeSlice(T, list.items);
 }
-pub fn writeArrayListUnmanaged(self: *BinWriter, T: type, list: std.ArrayListUnmanaged(T)) WriterError!void {
+pub fn writeArrayListUnmanaged(self: *BinWriter, T: type, list: std.ArrayListUnmanaged(T)) Error!void {
     try self.writeSlice(T, list.items);
 }
 
@@ -490,7 +489,7 @@ test writeArrayList {
     try testing.expectEqual(@as(u64, 101), rw.reader().readInt(u64, test_config.endian));
 }
 
-pub fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std.AutoHashMapUnmanaged(K, V)) WriterError!void {
+pub fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std.AutoHashMapUnmanaged(K, V)) Error!void {
     try self.writeInt(SliceLen, @intCast(map.count()));
     var it = map.iterator();
     while (it.next()) |entry| {
@@ -499,7 +498,7 @@ pub fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std.AutoHa
     }
 }
 
-pub fn writeHashMap(self: *BinWriter, K: type, V: type, map: std.AutoHashMap(K, V)) WriterError!void {
+pub fn writeHashMap(self: *BinWriter, K: type, V: type, map: std.AutoHashMap(K, V)) Error!void {
     try self.writeHashMapUnmanaged(K, V, map.unmanaged);
 }
 
