@@ -295,7 +295,7 @@ test "readEnum with custom deserialize function" {
     try testing.expectError(error.UnexpectedData, reader.readEnum(EnumType));
 }
 
-pub inline fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
+pub inline fn readUnionOld(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkUnion(T);
 
     if (std.meta.hasFn(T, "deserialize")) {
@@ -307,10 +307,12 @@ pub inline fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
     const tag_type = union_info.tag_type.?; // its non-null from checkUnion
 
     const t_info = @typeInfo(tag_type).Enum;
-    const size = t_info.tag_type;
-    const int_value = try self.readInt(size);
+    const TagType = t_info.tag_type;
+    const int_value = try self.readInt(TagType);
 
     // TODO: this could be wrong if different order is used?
+    // hmm, what if there are holes in the serialization?
+    // to number conversion is needed
     inline for (union_info.fields, 0..) |field, i| {
         if (i == int_value) {
             if (field.type == void) {
@@ -322,6 +324,40 @@ pub inline fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
     }
 
     return error.UnexpectedData;
+}
+
+pub fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
+    types.checkUnion(T);
+
+    if (std.meta.hasFn(T, "deserialize")) {
+        return T.deserialize(self);
+    }
+
+    const union_info = @typeInfo(T).Union;
+
+    if (union_info.tag_type) |UnionTagType| {
+        const enum_type_info = @typeInfo(UnionTagType).Enum;
+        const EnumTagType = enum_type_info.tag_type;
+        const read_tag_value = try self.readInt(EnumTagType);
+
+        inline for (union_info.fields) |field| {
+            // Get the actual enum value for this field
+            const enum_field = @field(UnionTagType, field.name);
+            const current_tag_value = @intFromEnum(enum_field);
+            if (current_tag_value == read_tag_value) {
+                if (field.type == void) {
+                    return @unionInit(T, field.name, {});
+                } else {
+                    // read additional value
+                    const value = try self.readAny(field.type);
+                    return @unionInit(T, field.name, value);
+                }
+            }
+        }
+        return error.UnexpectedData;
+    } else {
+        @compileError("Unable to deserialize untagged union '" ++ @typeName(T) ++ "'");
+    }
 }
 
 test readUnion {

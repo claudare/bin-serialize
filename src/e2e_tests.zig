@@ -111,6 +111,19 @@ test "e2e: union types" {
     try testRoundTrip(a, TestUnion{ .empty = {} });
 }
 
+// this test fails as the order is not respected
+// i need more robust implementation and better understanding of unions
+test "e2e: order agnostic union types" {
+    const a = testing.allocator;
+
+    const TestUnion = union(enum(u8)) {
+        second: struct { ok: bool } = 100,
+        first: struct { arr: [4]u8 } = 0,
+    };
+
+    try testRoundTrip(a, TestUnion{ .first = .{ .arr = [_]u8{'a'} ** 4 } });
+    try testRoundTrip(a, TestUnion{ .second = .{ .ok = true } });
+}
 // test "e2e: dynamic containers" {
 //     const a = testing.allocator;
 

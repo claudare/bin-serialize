@@ -226,21 +226,25 @@ test "writeEnum" {
     try testing.expectEqual(1, rw.reader().readInt(u8, test_config.endian));
 }
 
-pub inline fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
+pub inline fn writeUnionOld(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkUnion(T);
 
     if (std.meta.hasFn(T, "serialize")) {
         return try value.serialize(self);
     }
 
-    const info = @typeInfo(T).Union;
+    const union_info = @typeInfo(T).Union;
+    // const tag_type = union_info.tag_type.?; // its non-null from checkUnion
+
+    // const t_info = @typeInfo(tag_type).Enum;
+    // const TagType = t_info.tag_type;
 
     const tag = std.meta.activeTag(value);
 
     // this is taken from the json serialization
     // not sure how to test for untagged union
-    if (info.tag_type) |UnionTagType| {
-        inline for (info.fields) |u_field| {
+    if (union_info.tag_type) |UnionTagType| {
+        inline for (union_info.fields) |u_field| {
             if (value == @field(UnionTagType, u_field.name)) {
                 try self.writeInt(@typeInfo(UnionTagType).Enum.tag_type, @intFromEnum(tag));
 
@@ -257,7 +261,33 @@ pub inline fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
         @compileError("Unable to serialize untagged union '" ++ @typeName(T) ++ "'");
     }
 }
+pub fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
+    types.checkUnion(T);
 
+    if (std.meta.hasFn(T, "serialize")) {
+        return try value.serialize(self);
+    }
+
+    const union_info = @typeInfo(T).Union;
+
+    if (union_info.tag_type) |TagType| {
+        inline for (union_info.fields) |field| {
+            const enum_value = @field(TagType, field.name);
+            if (@as(TagType, value) == enum_value) {
+                try self.writeAny(@typeInfo(TagType).Enum.tag_type, @intFromEnum(enum_value));
+
+                if (field.type != void) {
+                    try self.writeAny(field.type, @field(value, field.name));
+                }
+                return;
+            }
+        }
+        return error.BadData;
+        // @compileError("Unable to serialize union '" ++ @typeName(T) ++ "' with tag '" ++ @typeName(TagType) ++ "' as it is not inside the union");
+    } else {
+        @compileError("Unable to serialize untagged union '" ++ @typeName(T) ++ "'");
+    }
+}
 test writeUnion {
     const UnionType = union(enum(u16)) { a: u64, b: void };
 
@@ -274,6 +304,27 @@ test writeUnion {
     try testing.expectEqual(0, rw.reader().readInt(u16, test_config.endian));
     try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
     try testing.expectEqual(1, rw.reader().readInt(u16, test_config.endian));
+}
+
+test "writeUnion explicit" {
+    const UnionType = union(enum(u16)) {
+        a: u64 = 40,
+        b: void = 80,
+    };
+
+    const a = testing.allocator;
+    var buff: [100]u8 = undefined;
+    var rw = std.io.fixedBufferStream(&buff);
+
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+
+    try writer.writeUnion(UnionType, UnionType{ .a = 123 });
+    try writer.writeUnion(UnionType, .b);
+
+    try rw.seekTo(0);
+    try testing.expectEqual(40, rw.reader().readInt(u16, test_config.endian));
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
+    try testing.expectEqual(80, rw.reader().readInt(u16, test_config.endian));
 }
 
 pub inline fn writeStruct(self: *BinWriter, T: type, value: T) WriterError!void {

@@ -23,3 +23,7 @@ Now add to your `build.zig`
 const binser = b.dependency("bin-serialize", .{});
 exe.root_module.addImport("bin-serialize", binser.module("bin-serialize"));
 ```
+
+# ideas
+[] continious writer/reader. Provide a union to reader or writer and it would serialize events into a steam. Really good for one-way messaging protocols.
+[] continious rpc. Provide reader and writer on Client and Server. Provide enum for both exgress (Server to Client) and ingress (Client to Server). Good for realtime applications.
