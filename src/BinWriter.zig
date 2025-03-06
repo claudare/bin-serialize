@@ -270,11 +270,11 @@ pub fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
 
     const union_info = @typeInfo(T).Union;
 
-    if (union_info.tag_type) |TagType| {
+    if (union_info.tag_type) |UnionTagType| {
         inline for (union_info.fields) |field| {
-            const enum_value = @field(TagType, field.name);
-            if (@as(TagType, value) == enum_value) {
-                try self.writeAny(@typeInfo(TagType).Enum.tag_type, @intFromEnum(enum_value));
+            const enum_value = @field(UnionTagType, field.name);
+            if (@as(UnionTagType, value) == enum_value) {
+                try self.writeInt(@typeInfo(UnionTagType).Enum.tag_type, @intFromEnum(enum_value));
 
                 if (field.type != void) {
                     try self.writeAny(field.type, @field(value, field.name));
