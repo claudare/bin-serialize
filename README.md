@@ -1,4 +1,4 @@
-# bin-serailize
+# bin-serialize
 
 A zig serailization library which allows for simple automatic and custom serialization to readers/writers. Currently, the encoding is not super efficient or performant. Will improve in the future.
 
@@ -6,14 +6,14 @@ The following types are currently supported: Bool, Float, Int, Optional, Enum, U
 
 This library will follow the latest stable version. Currently `0.13.0` is supported.
 
-# installation
+# Installation
 
 Fetch it via
 
 ```bash
-# specific version (TODO, this does not exist yet)
-zig fetch --save https://github.com/claudare/bin-serialize/archive/refs/tags/0.0.1.tar.gz
-# or main branch
+# specific version
+zig fetch --save https://github.com/claudare/bin-serialize/archive/refs/tags/{VERSION_TAG}.tar.gz
+# or use latest main branch
 zig fetch --save https://github.com/claudare/bin-serialize/archive/refs/heads/main.tar.gz
 ```
 
@@ -24,6 +24,14 @@ const binser = b.dependency("bin-serialize", .{});
 exe.root_module.addImport("bin-serialize", binser.module("bin-serialize"));
 ```
 
-# ideas
+# Limitations
+
+`usize` and `isize` integer types are not supported. Instead use concrete sizes divisible by 8.
+
+If non-8 sizes need serialization, then manually serialize them as `packed structs` with `writePackedStruct` and `readPackedStruct`.
+
+All the sizes of unions and enums must be divisible by 8. For example, `const MyEnum = enum { a = void, b = u64, c = [2]u8 }`, will not compile: `error: int type u2 must be divisible by 8`. In order to fix this, make sure the tag types are in fractions of 8 (`enum(u8)`).
+
+<!-- # ideas
 [] continious writer/reader. Provide a union to reader or writer and it would serialize events into a steam. Really good for one-way messaging protocols.
-[] continious rpc. Provide reader and writer on Client and Server. Provide enum for both exgress (Server to Client) and ingress (Client to Server). Good for realtime applications.
+[] continious rpc. Provide reader and writer on Client and Server. Provide enum for both exgress (Server to Client) and ingress (Client to Server). Good for realtime applications. -->

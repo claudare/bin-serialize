@@ -196,7 +196,6 @@ pub fn getRichType(comptime T: type) RichType {
     // @compileLog("TYPEINFO IS", type_info);
     switch (type_info) {
         .Void => {
-            // or instead just return the void?
             @compileError("void type must never be used");
         },
         .Bool => return .{ .Bool = {} },
