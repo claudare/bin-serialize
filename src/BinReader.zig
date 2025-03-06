@@ -211,8 +211,8 @@ test readOptional {
 pub fn readEnum(self: *BinReader, comptime T: type) ReaderError!T {
     comptime types.checkEnum(T);
 
-    if (std.meta.hasFn(T, "deserialize")) {
-        return try T.deserialize(self);
+    if (std.meta.hasFn(T, "binRead")) {
+        return try T.binRead(self);
     }
 
     const t_info = @typeInfo(T).Enum;
@@ -259,7 +259,7 @@ test "readEnum non-exhaustive" {
     try testing.expectEqual(EnumType.b, try reader.readEnum(EnumType));
 }
 
-test "readEnum with custom deserialize function" {
+test "readEnum with custom binRead function" {
     const EnumType = enum(u8) {
         a,
         b,
@@ -267,7 +267,7 @@ test "readEnum with custom deserialize function" {
         // oh boy, this is, in my humble opinion, a rough side of zig
         // its not possible to type it, and using anytype is very hard.
         // major refactor must be done soon, to use AnyReader interface...
-        pub fn deserialize(reader: *BinReader) BinReader.ReaderError!@This() {
+        pub fn binRead(reader: *BinReader) BinReader.ReaderError!@This() {
             const val = try reader.readByte();
             if (val == 100) {
                 return .a;
@@ -298,8 +298,8 @@ test "readEnum with custom deserialize function" {
 pub fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkUnion(T);
 
-    if (std.meta.hasFn(T, "deserialize")) {
-        return T.deserialize(self);
+    if (std.meta.hasFn(T, "binRead")) {
+        return T.binRead(self);
     }
 
     const union_info = @typeInfo(T).Union;
@@ -353,8 +353,8 @@ test readUnion {
 pub fn readStruct(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkStruct(T);
 
-    if (std.meta.hasFn(T, "deserialize")) {
-        return T.deserialize(self);
+    if (std.meta.hasFn(T, "binRead")) {
+        return T.binRead(self);
     }
 
     const struct_info = @typeInfo(T).Struct;

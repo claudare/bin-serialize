@@ -24,6 +24,24 @@ const binser = b.dependency("bin-serialize", .{});
 exe.root_module.addImport("bin-serialize", binser.module("bin-serialize"));
 ```
 
+# Usage
+
+... TODO...
+
+## Custom serialization functions
+
+implement 2 functions:
+```zig
+pub fn binWrite(self: *const @This(), writer: *BinWriter) BinWriter.WriterError!void {
+    try writer...
+}
+
+pub fn binRead(reader: *BinReader) BinReader.ReaderError!@This() {
+    const value = try reader.readA...
+    return .{ .value = value };
+}
+```
+
 # Limitations
 
 `usize` and `isize` integer types are not supported. Instead use concrete sizes divisible by 8.
@@ -35,3 +53,8 @@ All the sizes of unions and enums must be divisible by 8. For example, `const My
 <!-- # ideas
 [] continious writer/reader. Provide a union to reader or writer and it would serialize events into a steam. Really good for one-way messaging protocols.
 [] continious rpc. Provide reader and writer on Client and Server. Provide enum for both exgress (Server to Client) and ingress (Client to Server). Good for realtime applications. -->
+
+# TODOs
+ - support no-allocator operation (for when no dynamic structures are used)
+ - cleanup memory when allocator-specific functions error. This will require a custom deinit function "binFree(allocator: Allocator)"
+ - reading tuples

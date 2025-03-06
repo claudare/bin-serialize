@@ -124,6 +124,56 @@ test "e2e: order agnostic union types" {
     try testRoundTrip(a, TestUnion{ .first = .{ .arr = [_]u8{'a'} ** 4 } });
     try testRoundTrip(a, TestUnion{ .second = .{ .ok = true } });
 }
+
+test "e2e: packed structs" {
+    const a = testing.allocator;
+
+    const PackedStruct = packed struct {
+        flag: bool,
+        value: u7,
+    };
+
+    const packed_struct = PackedStruct{
+        .flag = true,
+        .value = 127,
+    };
+    try testRoundTrip(a, packed_struct);
+}
+
+test "custom serialization" {
+    const Custom = struct {
+        a: [3]u8,
+        b: u3, // this would not be possible automatically
+
+        // the self parameter needs to either be *const or no pointer... I still need to check this more
+        // in a real-world project
+        pub fn binWrite(self: *const @This(), writer: *BinWriter) BinWriter.WriterError!void {
+            try writer.writeArray([3]u8, self.a);
+            try writer.writeInt(u8, @intCast(self.b));
+        }
+
+        pub fn binRead(reader: *BinReader) BinReader.ReaderError!@This() {
+            const a = try reader.readArray([3]u8);
+            const b: u3 = @intCast(try reader.readInt(u8));
+            return .{ .a = a, .b = b };
+        }
+
+        pub fn cheatConstCheck(self: *@This()) void {
+            _ = self;
+        }
+    };
+
+    var custom = Custom{
+        .a = [3]u8{ 'a', 'b', 'c' },
+        .b = 2,
+    };
+    custom.cheatConstCheck();
+
+    try testRoundTrip(testing.allocator, custom);
+}
+
+// TODO: failing memory allocations and cleanup
+
 // TODO: reimplement this. Need to compare the actual values rather then pointers
 // test "e2e: dynamic containers" {
 //     const a = testing.allocator;
@@ -144,21 +194,6 @@ test "e2e: order agnostic union types" {
 //     try map.put(3, "three");
 //     try testRoundTrip(a, map);
 // }
-
-test "e2e: packed structs" {
-    const a = testing.allocator;
-
-    const PackedStruct = packed struct {
-        flag: bool,
-        value: u7,
-    };
-
-    const packed_struct = PackedStruct{
-        .flag = true,
-        .value = 127,
-    };
-    try testRoundTrip(a, packed_struct);
-}
 
 // TODO: make this an actual example...
 // test "e2e: complex nested structure" {

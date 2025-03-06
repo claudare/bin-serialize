@@ -198,8 +198,8 @@ test writeOptional {
 pub fn writeEnum(self: *BinWriter, T: type, value: T) WriterError!void {
     comptime types.checkEnum(T);
 
-    if (std.meta.hasFn(T, "serialize")) {
-        return try value.serialize(self);
+    if (std.meta.hasFn(T, "binWrite")) {
+        return try value.binWrite(self);
     }
 
     const tag_type = @typeInfo(T).Enum.tag_type;
@@ -226,8 +226,8 @@ test "writeEnum" {
 pub fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkUnion(T);
 
-    if (std.meta.hasFn(T, "serialize")) {
-        return try value.serialize(self);
+    if (std.meta.hasFn(T, "binWrite")) {
+        return try value.binWrite(self);
     }
 
     const union_info = @typeInfo(T).Union;
@@ -293,10 +293,19 @@ test "writeUnion explicit" {
 pub fn writeStruct(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkStruct(T);
 
-    if (std.meta.hasFn(T, "serialize")) {
-        return try value.serialize(self);
+    if (std.meta.hasFn(T, "binWrite")) {
+        // when the struct clares "self" with a pointer (self: *@This()), the following error occurs:
+        // error: expected type '*e2e_tests.test.custom serialization.Custom', found '*const e2e_tests.test.custom serialization.Custom'
+        return try value.binWrite(self);
     }
+    // i am doing exactly the same as json
+    // if (std.meta.hasFn(T, "jsonStringify")) {
+    //     return value.jsonStringify(self);
+    // }
 
+
+    // std.json.stringify(value: anytype, options: StringifyOptions, out_stream: anytype)
+    // std.json.innerParse(comptime T: type, allocator: Allocator, source: anytype, options: ParseOptions)
     const struct_info = @typeInfo(T).Struct;
 
     if (struct_info.is_tuple) {
