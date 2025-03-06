@@ -325,6 +325,7 @@ pub fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
         }
         return error.UnexpectedData;
     } else {
+        // this is actually useless, as this is checked by types.checkUnion()
         @compileError("Unable to deserialize untagged union '" ++ @typeName(T) ++ "'");
     }
 }

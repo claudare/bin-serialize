@@ -9,21 +9,33 @@ pub fn checkBool(T: type) void {
 }
 
 pub fn checkFloat(T: type) void {
-    // support all of these https://ziglang.org/documentation/master/#toc-Primitive-Types
-    if (T != f16 and T != f32 and T != f64 and T != f80 and T != f128) {
-        @compileError("float type " ++ @typeName(T) ++ " is not supported, use f32, f64, f80, or f128 instead");
-    }
-}
-
-pub fn checkInt(T: type) void {
     switch (@typeInfo(T)) {
-        .Int => |info| if (@rem(info.bits, 8) != 0) {
-            @compileError("int type " ++ @typeName(T) ++ " must be divisible by 8");
+        .Float => |info| {
+            _ = info;
+            // For now I removed validation of specific float types
+            // switch (info.bits) {
+            //     16, 32, 64, 80, 128 => {},
+            //     else => @compileError("float type " ++ @typeName(T) ++ " is not supported, use f16, f32, f64, f80, or f128"),
+            // }
         },
-        else => @compileError("type " ++ @typeName(T) ++ " is not an int"),
+        else => @compileError("type " ++ @typeName(T) ++ " is not a float"),
     }
 }
 
+pub fn checkInt(comptime T: type) void {
+    switch (@typeInfo(T)) {
+        .Int => |info| {
+            if (T == usize or T == isize) {
+                @compileError("dynamic integer type " ++ @typeName(T) ++ " is not supported, use fixed-width integers instead");
+            }
+
+            if (info.bits % 8 != 0) {
+                @compileError("integer type " ++ @typeName(T) ++ " must have size divisible by 8 bits");
+            }
+        },
+        else => @compileError("type " ++ @typeName(T) ++ " is not an integer"),
+    }
+}
 pub fn checkOptional(T: type) void {
     switch (@typeInfo(T)) {
         .Optional => {},
@@ -34,10 +46,20 @@ pub fn checkOptional(T: type) void {
 pub fn checkEnum(T: type) void {
     switch (@typeInfo(T)) {
         .Enum => |info| {
-            // FIXME: what is done if usize is defined on the struct?
-            // I guess cast to u64/i64 is sufficient?
+            // Check if enum has explicit tag type
+            // if (info.tag_type == null) {
+            //     @compileError("enum " ++ @typeName(T) ++ " must have an explicit integer tag type (e.g., enum(u8))");
+            // }
+
+            // dont allow dynamic tag sizes
             if (info.tag_type == usize or info.tag_type == isize) {
-                @compileError("FIXME: behavior for dynamic tag type of " ++ @typeName(T) ++ " has not been defined yet");
+                @compileError("enum " ++ @typeName(T) ++ " cannot use usize/isize as tag type");
+            }
+
+            // Check if tag type is multiple of 8 bits
+            const tag_info = @typeInfo(info.tag_type).Int;
+            if (tag_info.bits % 8 != 0) {
+                @compileError("enum " ++ @typeName(T) ++ " tag type must have size divisible by 8 bits");
             }
         },
         else => @compileError("type " ++ @typeName(T) ++ " is not an enum"),
@@ -46,15 +68,29 @@ pub fn checkEnum(T: type) void {
 pub fn checkUnion(T: type) void {
     switch (@typeInfo(T)) {
         .Union => |info| {
+            // Check if union is tagged
             if (info.tag_type) |TagType| {
-                // TODO: check that TagType is of multiple of 8!
-                // this will enable better error reporting
-                _ = TagType;
+                // Check if tag type is enum
+                switch (@typeInfo(TagType)) {
+                    .Enum => |tag_info| {
+                        // Its not possible to check if enum has explicit tag type?
+                        // if (tag_info.tag_type) {
+                        //     @compileError("union " ++ @typeName(T) ++ " tag enum must have an explicit integer tag type");
+                        // }
+
+                        // Check if tag type is multiple of 8 bits
+                        const tag_int_info = @typeInfo(tag_info.tag_type).Int;
+                        if (tag_int_info.bits % 8 != 0) {
+                            @compileError("union " ++ @typeName(T) ++ " tag type must have size divisible by 8 bits");
+                        }
+                    },
+                    else => @compileError("union " ++ @typeName(T) ++ " tag type must be an enum"),
+                }
             } else {
                 @compileError("untagged union " ++ @typeName(T) ++ " is not supported");
             }
         },
-        else => @compileError("type " ++ @typeName(T) ++ " is not an union"),
+        else => @compileError("type " ++ @typeName(T) ++ " is not a union"),
     }
 }
 pub fn checkStruct(T: type) void {
@@ -86,6 +122,9 @@ pub fn checkSlice(T: type) void {
         else => @compileError("type " ++ @typeName(T) ++ " is not a slice"),
     }
 }
+
+// TODO: maybe allow for non-const u8 ([]u8)?
+// what about all other wierd types ([:0]u8), ([*]u8)
 pub fn checkString(T: type) void {
     switch (@typeInfo(T)) {
         .Pointer => |info| switch (info.size) {
@@ -95,7 +134,7 @@ pub fn checkString(T: type) void {
                         return;
                     }
 
-                    @compileError("type " ++ @typeName(T) ++ " is not a currently supported string type");
+                    @compileError("type " ++ @typeName(T) ++ " is not a string. It must have const qualifier ([]const u8)");
                 }
             },
             else => |size| @compileError("type " ++ @typeName(T) ++ " is not a string. Wrong size " ++ size),
@@ -107,7 +146,7 @@ pub fn checkPointerSingle(T: type) void {
     switch (@typeInfo(T)) {
         .Pointer => |info| switch (info.size) {
             .One => {},
-            else => |size| @compileError("type " ++ @typeName(T) ++ " is not a single pointer. It is instead " ++ size),
+            else => @compileError("type " ++ @typeName(T) ++ " is not a single pointer"),
         },
         else => @compileError("type " ++ @typeName(T) ++ " is not a pointer"),
     }
