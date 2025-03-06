@@ -124,6 +124,7 @@ test "e2e: order agnostic union types" {
     try testRoundTrip(a, TestUnion{ .first = .{ .arr = [_]u8{'a'} ** 4 } });
     try testRoundTrip(a, TestUnion{ .second = .{ .ok = true } });
 }
+// TODO: reimplement this. Need to compare the actual values rather then pointers
 // test "e2e: dynamic containers" {
 //     const a = testing.allocator;
 
@@ -152,11 +153,11 @@ test "e2e: packed structs" {
         value: u7,
     };
 
-    const value = PackedStruct{
+    const packed_struct = PackedStruct{
         .flag = true,
         .value = 127,
     };
-    try testRoundTrip(a, value);
+    try testRoundTrip(a, packed_struct);
 }
 
 // TODO: make this an actual example...

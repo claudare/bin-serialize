@@ -32,7 +32,7 @@ pub const ReaderError = AnyReader.Error || error{
 
 allocator: Allocator,
 underlying_reader: AnyReader,
-bytes_remaining: usize,
+bytes_remaining: ?usize,
 ser_config: ConfigSerialization,
 
 pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: ReaderConfig, comptime ser_config: ConfigSerialization) BinReader {
@@ -48,28 +48,35 @@ pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: 
 /// always use this function to read!
 /// TODO: should this be inlined? or is this just bloat?
 pub inline fn read(self: *BinReader, buffer: []u8) ReaderError!usize {
-    const len_min = buffer.len;
+    if (self.bytes_remaining) |bytes_remaining| {
+        const len_min = buffer.len;
+        if (len_min > bytes_remaining) {
+            return error.LengthMismatch;
+        }
 
-    if (len_min > self.bytes_remaining) {
-        return error.LengthMismatch;
-    }
-    const len_read = try self.underlying_reader.read(buffer);
-    if (len_read > self.bytes_remaining) {
-        // TODO: this can technically never happen??
-        debug.print("undefined edge case triggered!\n", .{});
-        return error.LengthMismatch;
-    }
-    self.bytes_remaining -= len_min;
+        const len_read = try self.underlying_reader.read(buffer);
+        if (len_read > bytes_remaining) {
+            // TODO: this can technically never happen??
+            debug.print("too much was read?!\n", .{});
+            return error.LengthMismatch;
+        }
+        if (len_read < 1) {
+            debug.print("undefined edge case triggered NOTHING READ!\n", .{});
+            return error.EndOfStream;
+        }
+        self.bytes_remaining.? -= len_min;
 
-    return len_read;
+        return len_read;
+    } else {
+        return try self.underlying_reader.read(buffer);
+    }
 }
 
 /// a typed proxy of the `underlying_reader.readByte`
 /// always use this function to read!
 pub inline fn readByte(self: *BinReader) ReaderError!u8 {
     var result: [1]u8 = undefined;
-    const amt_read = try self.read(result[0..]);
-    if (amt_read < 1) return error.EndOfStream;
+    _ = try self.read(result[0..]);
     return result[0];
 }
 

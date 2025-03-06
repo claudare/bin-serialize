@@ -18,11 +18,12 @@ pub const ReaderConfig = struct {
     /// Provide the length of the data to be read
     /// bin-serialize will make sure that data outside the defined range wont be read
     /// Reading too little must be checked manually
-    len: usize,
+    /// Defauts to null: will read forever
+    len: ?usize = null,
 };
 
 pub const WriterConfig = struct {
     /// Provide the maximum length to be written
-    /// Default to null: write length can be infinite
+    /// Defaults to null: write length can be infinite
     max_len: ?usize = null,
 };
