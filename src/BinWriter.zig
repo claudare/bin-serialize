@@ -274,7 +274,9 @@ pub fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
         inline for (union_info.fields) |field| {
             const enum_value = @field(UnionTagType, field.name);
             if (@as(UnionTagType, value) == enum_value) {
-                try self.writeInt(@typeInfo(UnionTagType).Enum.tag_type, @intFromEnum(enum_value));
+                const EnumTagType = @typeInfo(UnionTagType).Enum.tag_type;
+                //@compileLog("EnumTagType IS ", EnumTagType);
+                try self.writeInt(EnumTagType, @intFromEnum(enum_value));
 
                 if (field.type != void) {
                     try self.writeAny(field.type, @field(value, field.name));
@@ -282,8 +284,7 @@ pub fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
                 return;
             }
         }
-        return error.BadData;
-        // @compileError("Unable to serialize union '" ++ @typeName(T) ++ "' with tag '" ++ @typeName(TagType) ++ "' as it is not inside the union");
+        return error.UnexpectedData;
     } else {
         @compileError("Unable to serialize untagged union '" ++ @typeName(T) ++ "'");
     }
