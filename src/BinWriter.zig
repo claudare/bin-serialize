@@ -44,7 +44,6 @@ pub fn init(allocator: Allocator, underlying_writer: AnyWriter, runtime_config: 
 
 /// a typed proxy of the `underlying_reader.read`
 /// always use this function to read!
-/// TODO: should this be inlined? or is this just bloat?
 pub inline fn write(self: *BinWriter, bytes: []const u8) WriterError!usize {
     const write_len = bytes.len;
 
@@ -60,7 +59,14 @@ pub inline fn write(self: *BinWriter, bytes: []const u8) WriterError!usize {
 
     return len_written;
 }
-
+/// a typed proxy of the `underlying_reader.readByte`
+/// always use this function to read!
+pub inline fn writeByte(self: *BinWriter, value: u8) WriterError!u8 {
+    var result = [1]u8{value};
+    const amt_written = try self.write(result[0..]);
+    if (amt_written < 1) return error.EndOfStream;
+    return result[0];
+}
 pub inline fn writeAny(self: *BinWriter, comptime T: type, value: T) WriterError!void {
     const rich_type = types.getRichType(T);
 
@@ -84,16 +90,7 @@ pub inline fn writeAny(self: *BinWriter, comptime T: type, value: T) WriterError
     };
 }
 
-/// a typed proxy of the `underlying_reader.readByte`
-/// always use this function to read!
-pub inline fn writeByte(self: *BinWriter, value: u8) WriterError!u8 {
-    var result = [1]u8{value};
-    const amt_written = try self.write(result[0..]);
-    if (amt_written < 1) return error.EndOfStream;
-    return result[0];
-}
-
-pub inline fn writeBool(self: *BinWriter, value: bool) WriterError!void {
+pub fn writeBool(self: *BinWriter, value: bool) WriterError!void {
     if (value) {
         _ = try self.writeByte(1);
     } else {
@@ -120,7 +117,7 @@ test writeBool {
     try testing.expectEqual(0, buff[1]);
 }
 
-pub inline fn writeFloat(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeFloat(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkFloat(T);
 
     const IntType = switch (@bitSizeOf(T)) {
@@ -151,7 +148,7 @@ test writeFloat {
     try testing.expectEqual(123.456, @as(f64, @bitCast(try rw.reader().readInt(u64, test_config.endian))));
 }
 
-pub inline fn writeInt(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeInt(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkInt(T);
 
     var bytes: [@divExact(@typeInfo(T).Int.bits, 8)]u8 = undefined;
@@ -173,7 +170,7 @@ test writeInt {
     try testing.expectEqual(123, rw.reader().readInt(u32, test_config.endian));
 }
 
-pub inline fn writeOptional(self: *BinWriter, T: type, value: ?T) WriterError!void {
+pub fn writeOptional(self: *BinWriter, T: type, value: ?T) WriterError!void {
     if (value) |v| {
         try self.writeBool(true);
         try self.writeAny(T, v);
@@ -198,7 +195,7 @@ test writeOptional {
     try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
 }
 
-pub inline fn writeEnum(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeEnum(self: *BinWriter, T: type, value: T) WriterError!void {
     comptime types.checkEnum(T);
 
     if (std.meta.hasFn(T, "serialize")) {
@@ -226,41 +223,6 @@ test "writeEnum" {
     try testing.expectEqual(1, rw.reader().readInt(u8, test_config.endian));
 }
 
-pub inline fn writeUnionOld(self: *BinWriter, T: type, value: T) WriterError!void {
-    types.checkUnion(T);
-
-    if (std.meta.hasFn(T, "serialize")) {
-        return try value.serialize(self);
-    }
-
-    const union_info = @typeInfo(T).Union;
-    // const tag_type = union_info.tag_type.?; // its non-null from checkUnion
-
-    // const t_info = @typeInfo(tag_type).Enum;
-    // const TagType = t_info.tag_type;
-
-    const tag = std.meta.activeTag(value);
-
-    // this is taken from the json serialization
-    // not sure how to test for untagged union
-    if (union_info.tag_type) |UnionTagType| {
-        inline for (union_info.fields) |u_field| {
-            if (value == @field(UnionTagType, u_field.name)) {
-                try self.writeInt(@typeInfo(UnionTagType).Enum.tag_type, @intFromEnum(tag));
-
-                if (u_field.type == void) {} else {
-                    try self.writeAny(u_field.type, @field(value, u_field.name));
-                }
-                break;
-            }
-        } else {
-            unreachable; // No active tag?
-        }
-        return;
-    } else {
-        @compileError("Unable to serialize untagged union '" ++ @typeName(T) ++ "'");
-    }
-}
 pub fn writeUnion(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkUnion(T);
 
@@ -328,7 +290,7 @@ test "writeUnion explicit" {
     try testing.expectEqual(80, rw.reader().readInt(u16, test_config.endian));
 }
 
-pub inline fn writeStruct(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeStruct(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkStruct(T);
 
     if (std.meta.hasFn(T, "serialize")) {
@@ -365,7 +327,7 @@ test writeStruct {
     try testing.expectEqual(@as(i40, -44), rw.reader().readInt(i40, test_config.endian));
 }
 
-pub inline fn writeStructPacked(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeStructPacked(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkStructPacked(T);
 
     _ = try self.write(std.mem.asBytes(&value));
@@ -403,7 +365,7 @@ test writeStructPacked {
     try testing.expectEqual(.z, res.b);
 }
 
-pub inline fn writeArray(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writeArray(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkArray(T);
 
     const info = @typeInfo(T).Array;
@@ -428,7 +390,7 @@ test writeArray {
     try testing.expectEqual(80, rw.reader().readInt(u64, test_config.endian));
 }
 
-pub inline fn writeSlice(self: *BinWriter, T: type, items: []const T) WriterError!void {
+pub fn writeSlice(self: *BinWriter, T: type, items: []const T) WriterError!void {
     try self.writeInt(SliceLen, @intCast(items.len));
     for (items) |item| {
         try self.writeAny(T, item);
@@ -451,7 +413,7 @@ test writeSlice {
     try testing.expectEqual(@as(u16, 42), rw.reader().readInt(u16, test_config.endian));
 }
 
-pub inline fn writeString(self: *BinWriter, value: []const u8) WriterError!void {
+pub fn writeString(self: *BinWriter, value: []const u8) WriterError!void {
     try self.writeSlice(u8, value);
 }
 
@@ -471,7 +433,7 @@ test writeString {
     try testing.expectEqualStrings("hello world", &str_buff);
 }
 
-pub inline fn writePointer(self: *BinWriter, T: type, value: T) WriterError!void {
+pub fn writePointer(self: *BinWriter, T: type, value: T) WriterError!void {
     types.checkPointerSingle(T);
     const ChildType = @typeInfo(T).Pointer.child;
     try self.writeAny(ChildType, value.*);
@@ -492,10 +454,10 @@ test writePointer {
     try testing.expectEqual(@as(u64, 123), try rw.reader().readInt(u64, test_config.endian));
 }
 
-pub inline fn writeArrayList(self: *BinWriter, T: type, list: std.ArrayList(T)) WriterError!void {
+pub fn writeArrayList(self: *BinWriter, T: type, list: std.ArrayList(T)) WriterError!void {
     try self.writeSlice(T, list.items);
 }
-pub inline fn writeArrayListUnmanaged(self: *BinWriter, T: type, list: std.ArrayListUnmanaged(T)) WriterError!void {
+pub fn writeArrayListUnmanaged(self: *BinWriter, T: type, list: std.ArrayListUnmanaged(T)) WriterError!void {
     try self.writeSlice(T, list.items);
 }
 
@@ -519,7 +481,7 @@ test writeArrayList {
     try testing.expectEqual(@as(u64, 101), rw.reader().readInt(u64, test_config.endian));
 }
 
-pub inline fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std.AutoHashMapUnmanaged(K, V)) WriterError!void {
+pub fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std.AutoHashMapUnmanaged(K, V)) WriterError!void {
     try self.writeInt(SliceLen, @intCast(map.count()));
     var it = map.iterator();
     while (it.next()) |entry| {
@@ -528,7 +490,7 @@ pub inline fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std
     }
 }
 
-pub inline fn writeHashMap(self: *BinWriter, K: type, V: type, map: std.AutoHashMap(K, V)) WriterError!void {
+pub fn writeHashMap(self: *BinWriter, K: type, V: type, map: std.AutoHashMap(K, V)) WriterError!void {
     try self.writeHashMapUnmanaged(K, V, map.unmanaged);
 }
 

@@ -46,7 +46,6 @@ pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: 
 
 /// a typed proxy of the `underlying_reader.read`
 /// always use this function to read!
-/// TODO: should this be inlined? or is this just bloat?
 pub inline fn read(self: *BinReader, buffer: []u8) ReaderError!usize {
     if (self.bytes_remaining) |bytes_remaining| {
         const len_min = buffer.len;
@@ -55,11 +54,7 @@ pub inline fn read(self: *BinReader, buffer: []u8) ReaderError!usize {
         }
 
         const len_read = try self.underlying_reader.read(buffer);
-        if (len_read > bytes_remaining) {
-            // TODO: this can technically never happen??
-            debug.print("too much was read?!\n", .{});
-            return error.LengthMismatch;
-        }
+
         if (len_read < 1) {
             debug.print("undefined edge case triggered NOTHING READ!\n", .{});
             return error.EndOfStream;
@@ -72,8 +67,6 @@ pub inline fn read(self: *BinReader, buffer: []u8) ReaderError!usize {
     }
 }
 
-/// a typed proxy of the `underlying_reader.readByte`
-/// always use this function to read!
 pub inline fn readByte(self: *BinReader) ReaderError!u8 {
     var result: [1]u8 = undefined;
     _ = try self.read(result[0..]);
@@ -105,7 +98,7 @@ pub inline fn readAny(self: *BinReader, comptime T: type) ReaderError!T {
 }
 
 /// inefficient way to use bool. Underlying data is aligned to u8
-pub inline fn readBool(self: *BinReader) ReaderError!bool {
+pub fn readBool(self: *BinReader) ReaderError!bool {
     const single: u8 = try self.readByte();
 
     if (single == 1) {
@@ -132,7 +125,7 @@ test readBool {
     try testing.expectError(error.LengthMismatch, reader.readBool());
 }
 
-pub inline fn readFloat(self: *BinReader, comptime T: type) ReaderError!T {
+pub fn readFloat(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkFloat(T);
 
     const IntType = switch (@bitSizeOf(T)) {
@@ -166,7 +159,7 @@ test readFloat {
 }
 
 // TODO: for now the size must be divisble by 8 exactly
-pub inline fn readInt(self: *BinReader, comptime T: type) ReaderError!T {
+pub fn readInt(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkInt(T);
 
     const byte_count = @divExact(@typeInfo(T).Int.bits, 8);
@@ -191,7 +184,7 @@ test readInt {
     try testing.expectEqual(123, res);
 }
 
-pub inline fn readOptional(self: *BinReader, comptime T: type) ReaderError!?T {
+pub fn readOptional(self: *BinReader, comptime T: type) ReaderError!?T {
     const has_value = try self.readBool();
     if (has_value) {
         return try self.readAny(T);
@@ -215,7 +208,7 @@ test readOptional {
     try testing.expectEqual(123, try reader.readOptional(u64));
 }
 
-pub inline fn readEnum(self: *BinReader, comptime T: type) ReaderError!T {
+pub fn readEnum(self: *BinReader, comptime T: type) ReaderError!T {
     comptime types.checkEnum(T);
 
     if (std.meta.hasFn(T, "deserialize")) {
@@ -302,37 +295,6 @@ test "readEnum with custom deserialize function" {
     try testing.expectError(error.UnexpectedData, reader.readEnum(EnumType));
 }
 
-pub inline fn readUnionOld(self: *BinReader, comptime T: type) ReaderError!T {
-    types.checkUnion(T);
-
-    if (std.meta.hasFn(T, "deserialize")) {
-        return T.deserialize(self);
-    }
-
-    const union_info = @typeInfo(T).Union;
-
-    const tag_type = union_info.tag_type.?; // its non-null from checkUnion
-
-    const t_info = @typeInfo(tag_type).Enum;
-    const TagType = t_info.tag_type;
-    const int_value = try self.readInt(TagType);
-
-    // TODO: this could be wrong if different order is used?
-    // hmm, what if there are holes in the serialization?
-    // to number conversion is needed
-    inline for (union_info.fields, 0..) |field, i| {
-        if (i == int_value) {
-            if (field.type == void) {
-                return @unionInit(T, field.name, {});
-            } else {
-                return @unionInit(T, field.name, try self.readAny(field.type));
-            }
-        }
-    }
-
-    return error.UnexpectedData;
-}
-
 pub fn readUnion(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkUnion(T);
 
@@ -387,7 +349,7 @@ test readUnion {
     try testing.expectError(error.UnexpectedData, reader.readUnion(UnionType));
 }
 
-pub inline fn readStruct(self: *BinReader, comptime T: type) ReaderError!T {
+pub fn readStruct(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkStruct(T);
 
     if (std.meta.hasFn(T, "deserialize")) {
@@ -450,7 +412,7 @@ test "readStruct tuple" {
 
 /// TODO: check endianess here
 /// like the writer: writeStructEndian
-pub inline fn readStructPacked(self: *BinReader, comptime T: type) anyerror!T {
+pub fn readStructPacked(self: *BinReader, comptime T: type) anyerror!T {
     types.checkStructPacked(T);
 
     var result: [1]T = undefined;
@@ -477,7 +439,7 @@ test "struct packed" {
     try testing.expectEqual(.z, res.b);
 }
 
-pub inline fn readArray(self: *BinReader, comptime T: type) anyerror!T {
+pub fn readArray(self: *BinReader, comptime T: type) anyerror!T {
     const arrayInfo = @typeInfo(T).Array;
 
     var result: T = undefined;
@@ -486,10 +448,6 @@ pub inline fn readArray(self: *BinReader, comptime T: type) anyerror!T {
         result[i] = try self.readAny(arrayInfo.child);
     }
 
-    // this cant be used for some reason instead:
-    // inline for (0..arrayInfo.len) |i| {
-    //     result[i] == try self.readAny(arrayInfo.child);
-    // }
     return result;
 }
 
@@ -515,7 +473,7 @@ test readArray {
 /// caller owns memory
 /// Array will be deinitialized on failure
 /// TODO: each item must be deinited automatically as well when error occurs
-pub inline fn readSlice(self: *BinReader, comptime T: type) ReaderError![]T {
+pub fn readSlice(self: *BinReader, comptime T: type) ReaderError![]T {
     var array_list = try self.readArrayListUnmanaged(T);
     return array_list.toOwnedSlice(self.allocator);
 }
@@ -541,7 +499,7 @@ test readSlice {
 
 /// Array will be deinitialized on failure
 /// TODO: each item must be deinited automatically when error occurs
-pub inline fn readArrayListUnmanaged(self: *BinReader, comptime T: type) ReaderError!std.ArrayListUnmanaged(T) {
+pub fn readArrayListUnmanaged(self: *BinReader, comptime T: type) ReaderError!std.ArrayListUnmanaged(T) {
     const len = try self.readInt(SliceLen);
 
     // it would be nice to calculate the maximum allowed size from the bytes remaining
@@ -579,7 +537,7 @@ test "readArrayListUnmanaged" {
     try testing.expectEqual(101, res.items[1]);
 }
 
-pub inline fn readArrayList(self: *BinReader, comptime T: type) ReaderError!std.ArrayList(T) {
+pub fn readArrayList(self: *BinReader, comptime T: type) ReaderError!std.ArrayList(T) {
     var unmanaged = try self.readArrayListUnmanaged(T);
     return unmanaged.toManaged(self.allocator);
 }
@@ -604,7 +562,7 @@ test "readArrayList" {
     try testing.expectEqual(101, res.items[1]);
 }
 
-pub inline fn readString(self: *BinReader) ReaderError![]const u8 {
+pub fn readString(self: *BinReader) ReaderError![]const u8 {
     const len = try self.readInt(SliceLen);
 
     var list = try std.ArrayList(u8).initCapacity(self.allocator, len);
@@ -638,7 +596,7 @@ test readString {
 
 /// Reads a pointer and returns a pointer
 /// Type T MUST be a pointer type, and it returns a pointer too
-pub inline fn readPointer(self: *BinReader, comptime T: type) ReaderError!T {
+pub fn readPointer(self: *BinReader, comptime T: type) ReaderError!T {
     types.checkPointerSingle(T);
 
     // FIXME: this is broken...
@@ -665,7 +623,7 @@ test readPointer {
     try testing.expectEqual(@as(u64, 123), res.*);
 }
 
-pub inline fn readHashMapUnmanaged(self: *BinReader, comptime K: type, comptime V: type) ReaderError!std.AutoHashMapUnmanaged(K, V) {
+pub fn readHashMapUnmanaged(self: *BinReader, comptime K: type, comptime V: type) ReaderError!std.AutoHashMapUnmanaged(K, V) {
     // or it gives me a hashmap and I append to it!
     // TODO: check for presence of unmanaged: Unmanaged on it. If unmanaged exists, that means the underlying structure is managed
     const len = try self.readInt(SliceLen);
@@ -718,7 +676,7 @@ test "readHashmapUnmanaged" {
 /// Will return an autohashmap
 /// TODO: special case must be taken when string is the key!
 /// Note: this assumes that there are no duplicate keys!
-pub inline fn readHashMap(self: *BinReader, comptime K: type, comptime V: type) ReaderError!std.AutoHashMap(K, V) {
+pub fn readHashMap(self: *BinReader, comptime K: type, comptime V: type) ReaderError!std.AutoHashMap(K, V) {
     const unmanaged = try self.readHashMapUnmanaged(K, V);
     return unmanaged.promote(self.allocator);
 }
