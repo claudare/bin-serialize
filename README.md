@@ -1,4 +1,4 @@
-# bin-serialize
+# bin-serialize/
 
 A zig serailization library which allows for simple automatic and custom serialization to readers/writers. Currently, the encoding is not super efficient or performant. Will improve in the future.
 
@@ -33,11 +33,13 @@ exe.root_module.addImport("bin-serialize", binser.module("bin-serialize"));
 implement 2 functions:
 ```zig
 pub fn binWrite(self: *const @This(), writer: *BinWriter) BinWriter.WriterError!void {
-    try writer...
+    try writer.writeInt(u8, self.value);
+    ...
 }
 
 pub fn binRead(reader: *BinReader) BinReader.ReaderError!@This() {
-    const value = try reader.readA...
+    const value = try reader.readInt(u8)
+    ...
     return .{ .value = value };
 }
 ```

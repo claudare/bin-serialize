@@ -2,11 +2,8 @@ const std = @import("std");
 const testing = std.testing;
 const BinReader = @import("BinReader.zig");
 const BinWriter = @import("BinWriter.zig");
-const config = @import("config.zig");
 
-const test_config = config.ConfigSerialization{
-    .endian = .little,
-};
+const test_endian = .little;
 
 fn testRoundTrip(test_allocator: std.mem.Allocator, value: anytype) !void {
     var arena = std.heap.ArenaAllocator.init(test_allocator);
@@ -18,12 +15,12 @@ fn testRoundTrip(test_allocator: std.mem.Allocator, value: anytype) !void {
     var fbs = std.io.fixedBufferStream(&buff);
 
     // Write
-    var writer = BinWriter.init(allocator, fbs.writer().any(), .{}, test_config);
+    var writer = BinWriter.init(allocator, fbs.writer().any(), .{});
     try writer.writeAny(@TypeOf(value), value);
 
     // Read
     try fbs.seekTo(0);
-    var reader = BinReader.init(allocator, fbs.reader().any(), .{ .len = writer.total_written }, test_config);
+    var reader = BinReader.init(allocator, fbs.reader().any(), .{ .len = writer.total_written });
     const result = try reader.readAny(@TypeOf(value));
 
     // special case for slice comparison

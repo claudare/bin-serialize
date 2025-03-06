@@ -1,21 +1,23 @@
 const std = @import("std");
+const root = @import("root.zig");
 const testing = std.testing;
 const debug = std.debug;
 const AnyWriter = std.io.AnyWriter;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
-const config = @import("config.zig");
-
-const SliceLen = config.SliceLen;
-const ConfigSerialization = config.ConfigSerialization;
-const WriterConfig = config.WriterConfig;
+const SliceLen = root.DefaultSliceLen;
 const types = @import("types.zig");
 
-const BinWriter = @This();
+const test_endian = .little; // same as default
 
-const test_config = ConfigSerialization{
-    .endian = .little,
+const BinWriter = @This();
+pub const WriterConfig = struct {
+    /// Provide the maximum length to be written
+    /// Defaults to null: write length can be infinite
+    max_len: ?usize = null,
+
+    endian: std.builtin.Endian = .little,
 };
 
 // FIXME: AnyReader.Error is anyerror... it doesnt help at all
@@ -30,15 +32,15 @@ allocator: Allocator,
 underlying_writer: AnyWriter,
 total_written: usize,
 maybe_max_len: ?usize,
-ser_config: ConfigSerialization,
+endian: std.builtin.Endian,
 
-pub fn init(allocator: Allocator, underlying_writer: AnyWriter, runtime_config: WriterConfig, comptime ser_config: ConfigSerialization) BinWriter {
+pub fn init(allocator: Allocator, underlying_writer: AnyWriter, config: WriterConfig) BinWriter {
     return .{
         .allocator = allocator,
         .underlying_writer = underlying_writer,
         .total_written = 0,
-        .maybe_max_len = runtime_config.max_len,
-        .ser_config = ser_config,
+        .maybe_max_len = config.max_len,
+        .endian = config.endian,
     };
 }
 
@@ -103,7 +105,7 @@ test writeBool {
     var buff: [2]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = 2 }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = 2 });
 
     try rw.seekTo(0);
     try writer.writeBool(true);
@@ -139,20 +141,20 @@ test writeFloat {
     var buff: [10]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try rw.seekTo(0);
     try writer.writeFloat(f64, 123.456);
 
     try rw.seekTo(0);
-    try testing.expectEqual(123.456, @as(f64, @bitCast(try rw.reader().readInt(u64, test_config.endian))));
+    try testing.expectEqual(123.456, @as(f64, @bitCast(try rw.reader().readInt(u64, test_endian))));
 }
 
 pub fn writeInt(self: *BinWriter, T: type, value: T) Error!void {
     types.checkInt(T);
 
     var bytes: [@divExact(@typeInfo(T).Int.bits, 8)]u8 = undefined;
-    std.mem.writeInt(std.math.ByteAlignedInt(T), &bytes, value, self.ser_config.endian);
+    std.mem.writeInt(std.math.ByteAlignedInt(T), &bytes, value, self.endian);
     _ = try self.write(&bytes);
 }
 
@@ -161,13 +163,13 @@ test writeInt {
     var buff: [10]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try rw.seekTo(0);
     try writer.writeInt(u32, 123);
 
     try rw.seekTo(0);
-    try testing.expectEqual(123, rw.reader().readInt(u32, test_config.endian));
+    try testing.expectEqual(123, rw.reader().readInt(u32, test_endian));
 }
 
 pub fn writeOptional(self: *BinWriter, T: type, value: ?T) Error!void {
@@ -184,15 +186,15 @@ test writeOptional {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeOptional(u64, null);
     try writer.writeOptional(u64, 123);
 
     try rw.seekTo(0);
-    try testing.expectEqual(0, rw.reader().readInt(u8, test_config.endian)); // null marker
-    try testing.expectEqual(1, rw.reader().readInt(u8, test_config.endian)); // non-null marker
-    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
+    try testing.expectEqual(0, rw.reader().readInt(u8, test_endian)); // null marker
+    try testing.expectEqual(1, rw.reader().readInt(u8, test_endian)); // non-null marker
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_endian));
 }
 
 pub fn writeEnum(self: *BinWriter, T: type, value: T) Error!void {
@@ -213,14 +215,14 @@ test "writeEnum" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeEnum(EnumType, .a);
     try writer.writeEnum(EnumType, .b);
 
     try rw.seekTo(0);
-    try testing.expectEqual(0, rw.reader().readInt(u8, test_config.endian));
-    try testing.expectEqual(1, rw.reader().readInt(u8, test_config.endian));
+    try testing.expectEqual(0, rw.reader().readInt(u8, test_endian));
+    try testing.expectEqual(1, rw.reader().readInt(u8, test_endian));
 }
 
 pub fn writeUnion(self: *BinWriter, T: type, value: T) Error!void {
@@ -258,15 +260,15 @@ test writeUnion {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeUnion(UnionType, UnionType{ .a = 123 });
     try writer.writeUnion(UnionType, .b);
 
     try rw.seekTo(0);
-    try testing.expectEqual(0, rw.reader().readInt(u16, test_config.endian));
-    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
-    try testing.expectEqual(1, rw.reader().readInt(u16, test_config.endian));
+    try testing.expectEqual(0, rw.reader().readInt(u16, test_endian));
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_endian));
+    try testing.expectEqual(1, rw.reader().readInt(u16, test_endian));
 }
 
 test "writeUnion explicit" {
@@ -279,15 +281,15 @@ test "writeUnion explicit" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeUnion(UnionType, UnionType{ .a = 123 });
     try writer.writeUnion(UnionType, .b);
 
     try rw.seekTo(0);
-    try testing.expectEqual(40, rw.reader().readInt(u16, test_config.endian));
-    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
-    try testing.expectEqual(80, rw.reader().readInt(u16, test_config.endian));
+    try testing.expectEqual(40, rw.reader().readInt(u16, test_endian));
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_endian));
+    try testing.expectEqual(80, rw.reader().readInt(u16, test_endian));
 }
 
 pub fn writeStruct(self: *BinWriter, T: type, value: T) Error!void {
@@ -326,13 +328,13 @@ test writeStruct {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeStruct(StructT, .{ .a = 123, .b = -44 });
 
     try rw.seekTo(0);
-    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
-    try testing.expectEqual(@as(i40, -44), rw.reader().readInt(i40, test_config.endian));
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_endian));
+    try testing.expectEqual(@as(i40, -44), rw.reader().readInt(i40, test_endian));
 }
 
 pub fn writeStructPacked(self: *BinWriter, T: type, value: T) Error!void {
@@ -363,7 +365,7 @@ test writeStructPacked {
     var buff: [1]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeStructPacked(StructT, .{ .a = 10, .b = .z });
 
@@ -389,13 +391,13 @@ test writeArray {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeArray(ArrayType, .{ 123, 80 });
 
     try rw.seekTo(0);
-    try testing.expectEqual(123, rw.reader().readInt(u64, test_config.endian));
-    try testing.expectEqual(80, rw.reader().readInt(u64, test_config.endian));
+    try testing.expectEqual(123, rw.reader().readInt(u64, test_endian));
+    try testing.expectEqual(80, rw.reader().readInt(u64, test_endian));
 }
 
 pub fn writeSlice(self: *BinWriter, T: type, items: []const T) Error!void {
@@ -410,15 +412,15 @@ test writeSlice {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     const slice = &[_]u16{ 123, 42 };
     try writer.writeSlice(u16, slice);
 
     try rw.seekTo(0);
-    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_config.endian));
-    try testing.expectEqual(@as(u16, 123), rw.reader().readInt(u16, test_config.endian));
-    try testing.expectEqual(@as(u16, 42), rw.reader().readInt(u16, test_config.endian));
+    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_endian));
+    try testing.expectEqual(@as(u16, 123), rw.reader().readInt(u16, test_endian));
+    try testing.expectEqual(@as(u16, 42), rw.reader().readInt(u16, test_endian));
 }
 
 pub fn writeString(self: *BinWriter, value: []const u8) Error!void {
@@ -430,12 +432,12 @@ test writeString {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     try writer.writeString("hello world");
 
     try rw.seekTo(0);
-    try testing.expectEqual(@as(SliceLen, 11), rw.reader().readInt(SliceLen, test_config.endian));
+    try testing.expectEqual(@as(SliceLen, 11), rw.reader().readInt(SliceLen, test_endian));
     var str_buff: [11]u8 = undefined;
     _ = try rw.reader().readAll(&str_buff);
     try testing.expectEqualStrings("hello world", &str_buff);
@@ -452,14 +454,14 @@ test writePointer {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     const value: u64 = 123;
     const ptr: *const u64 = &value;
     try writer.writePointer(*const u64, ptr);
 
     try rw.seekTo(0);
-    try testing.expectEqual(@as(u64, 123), try rw.reader().readInt(u64, test_config.endian));
+    try testing.expectEqual(@as(u64, 123), try rw.reader().readInt(u64, test_endian));
 }
 
 pub fn writeArrayList(self: *BinWriter, T: type, list: std.ArrayList(T)) Error!void {
@@ -474,7 +476,7 @@ test writeArrayList {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     var list = std.ArrayList(u64).init(a);
     defer list.deinit();
@@ -484,9 +486,9 @@ test writeArrayList {
     try writer.writeArrayList(u64, list);
 
     try rw.seekTo(0);
-    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_config.endian));
-    try testing.expectEqual(@as(u64, 100), rw.reader().readInt(u64, test_config.endian));
-    try testing.expectEqual(@as(u64, 101), rw.reader().readInt(u64, test_config.endian));
+    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_endian));
+    try testing.expectEqual(@as(u64, 100), rw.reader().readInt(u64, test_endian));
+    try testing.expectEqual(@as(u64, 101), rw.reader().readInt(u64, test_endian));
 }
 
 pub fn writeHashMapUnmanaged(self: *BinWriter, K: type, V: type, map: std.AutoHashMapUnmanaged(K, V)) Error!void {
@@ -507,7 +509,7 @@ test writeHashMap {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null }, test_config);
+    var writer = BinWriter.init(a, rw.writer().any(), .{ .max_len = null });
 
     var map = std.AutoHashMap(u32, u64).init(a);
     defer map.deinit();
@@ -517,11 +519,11 @@ test writeHashMap {
     try writer.writeHashMap(u32, u64, map);
 
     try rw.seekTo(0);
-    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_config.endian));
-    const k1 = try rw.reader().readInt(u32, test_config.endian);
-    const v1 = try rw.reader().readInt(u64, test_config.endian);
-    const k2 = try rw.reader().readInt(u32, test_config.endian);
-    const v2 = try rw.reader().readInt(u64, test_config.endian);
+    try testing.expectEqual(@as(SliceLen, 2), rw.reader().readInt(SliceLen, test_endian));
+    const k1 = try rw.reader().readInt(u32, test_endian);
+    const v1 = try rw.reader().readInt(u64, test_endian);
+    const k2 = try rw.reader().readInt(u32, test_endian);
+    const v2 = try rw.reader().readInt(u64, test_endian);
     try testing.expectEqual(@as(u32, 1), k1);
     try testing.expectEqual(@as(u64, 10), v1);
     try testing.expectEqual(@as(u32, 2), k2);

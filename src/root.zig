@@ -1,20 +1,20 @@
 const std = @import("std");
 const testing = std.testing;
-const config = @import("config.zig");
 
-// library exports
-pub const ConfigSerialization = config.ConfigSerialization;
-pub const SliceLen = config.SliceLen;
+// Zig build system does not allow passing "type" into library options
+// Therefore, its impossible for library consumers to choose length size encoding,
+// Even at build time in their `build.zig`.
+// Because of this, its hardcoded to u32 for "automatic encodings"
+// Library user, in the future, could manually specify the size when manually serializing/deserializing
+// soon im going to try to override this?
+// https://ziggit.dev/t/why-use-import-root/6749
+pub const DefaultSliceLen = u32;
 
 // reader
 pub const BinReader = @import("BinReader.zig");
-pub const ReaderConfig = config.ReaderConfig;
-pub const ReaderError = BinReader.Error;
 
 // writer
 pub const BinWriter = @import("BinWriter.zig");
-pub const WriterConfig = config.WriterConfig;
-pub const WriterError = BinWriter.Error;
 
 test {
     _ = @import("BinReader.zig");

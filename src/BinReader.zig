@@ -1,21 +1,26 @@
 const std = @import("std");
+const root = @import("root.zig");
 const testing = std.testing;
 const debug = std.debug;
 const AnyReader = std.io.AnyReader;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
-const config = @import("config.zig");
-
-const SliceLen = config.SliceLen;
-const ConfigSerialization = config.ConfigSerialization;
-const ReaderConfig = config.ReaderConfig;
+const SliceLen = root.DefaultSliceLen;
 const types = @import("types.zig");
+
+const test_endian = std.builtin.Endian.little;
 
 const BinReader = @This();
 
-const test_config = ConfigSerialization{
-    .endian = .little,
+pub const ReaderConfig = struct {
+    /// Provide the length of the data to be read
+    /// bin-serialize will make sure that data outside the defined range wont be read
+    /// Reading too little must be checked manually
+    /// Defauts to null: will read forever
+    len: ?usize = null,
+
+    endian: std.builtin.Endian = .little,
 };
 
 // FIXME: AnyReader.Error is anyerror... it doesnt help at all
@@ -33,14 +38,14 @@ pub const Error = AnyReader.Error || error{
 allocator: Allocator,
 underlying_reader: AnyReader,
 bytes_remaining: ?usize,
-ser_config: ConfigSerialization,
+endian: std.builtin.Endian,
 
-pub fn init(allocator: Allocator, underlying_reader: AnyReader, runtime_config: ReaderConfig, comptime ser_config: ConfigSerialization) BinReader {
+pub fn init(allocator: Allocator, underlying_reader: AnyReader, reader_config: ReaderConfig) BinReader {
     return .{
         .allocator = allocator,
         .underlying_reader = underlying_reader,
-        .bytes_remaining = runtime_config.len,
-        .ser_config = ser_config,
+        .bytes_remaining = reader_config.len,
+        .endian = reader_config.endian,
     };
 }
 
@@ -115,7 +120,7 @@ test readBool {
     var buff: [3]u8 = .{ 0b0, 0b1, 0b1000 };
     var rw = std.io.fixedBufferStream(&buff);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 3 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 3 });
 
     try rw.seekTo(0);
     try testing.expectEqual(false, try reader.readBool());
@@ -136,7 +141,6 @@ pub fn readFloat(self: *BinReader, comptime T: type) Error!T {
         128 => u128,
         else => unreachable,
     };
-
     const int_value = try self.readInt(IntType);
     const result: T = @bitCast(int_value);
 
@@ -148,17 +152,17 @@ test readFloat {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    const float_encoded: u64 = @bitCast(@as(f64, 123.456)); // bitcast to encode it!
-    try rw.writer().writeInt(u64, float_encoded, test_config.endian);
+    const float_encoded: u64 = @bitCast(@as(f64, 123.456));
+    try rw.writer().writeInt(u64, float_encoded, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(64, 8) }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(64, 8) });
 
     try rw.seekTo(0);
     const res = try reader.readFloat(f64);
     try testing.expectEqual(@as(f64, 123.456), res);
 }
 
-// TODO: for now the size must be divisble by 8 exactly
+/// The bit size of integer must be divisible by 8!
 pub fn readInt(self: *BinReader, comptime T: type) Error!T {
     types.checkInt(T);
 
@@ -167,7 +171,7 @@ pub fn readInt(self: *BinReader, comptime T: type) Error!T {
 
     _ = try self.read(&buff);
 
-    return std.mem.readInt(T, &buff, self.ser_config.endian);
+    return std.mem.readInt(T, &buff, self.endian);
 }
 
 test readInt {
@@ -175,9 +179,9 @@ test readInt {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u40, 123, test_config.endian);
+    try rw.writer().writeInt(u40, 123, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(40, 8) }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(40, 8) });
 
     try rw.seekTo(0);
     const res = try reader.readInt(u40);
@@ -197,11 +201,11 @@ test readOptional {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u8, 0, test_config.endian); // null value
-    try rw.writer().writeInt(u8, 1, test_config.endian); // non-null value
-    try rw.writer().writeInt(u64, 123, test_config.endian); // non-null value
+    try rw.writer().writeInt(u8, 0, test_endian); // null value
+    try rw.writer().writeInt(u8, 1, test_endian); // non-null value
+    try rw.writer().writeInt(u64, 123, test_endian); // non-null value
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(8 + 8 + 64, 8) }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = @divExact(8 + 8 + 64, 8), .endian = test_endian });
 
     try rw.seekTo(0);
     try testing.expectEqual(null, try reader.readOptional(u64));
@@ -232,10 +236,10 @@ test "readEnum exhaustive" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u8, 0, test_config.endian);
-    try rw.writer().writeInt(u8, 1, test_config.endian);
+    try rw.writer().writeInt(u8, 0, test_endian);
+    try rw.writer().writeInt(u8, 1, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 2 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 2, .endian = test_endian });
 
     try rw.seekTo(0);
     try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
@@ -249,10 +253,10 @@ test "readEnum non-exhaustive" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u8, 0, test_config.endian);
-    try rw.writer().writeInt(u8, 1, test_config.endian);
+    try rw.writer().writeInt(u8, 0, test_endian);
+    try rw.writer().writeInt(u8, 1, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 2 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 2 }); // i gave up on defaults
 
     try rw.seekTo(0);
     try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
@@ -283,11 +287,11 @@ test "readEnum with custom binRead function" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u8, 100, test_config.endian);
-    try rw.writer().writeInt(u8, 101, test_config.endian);
-    try rw.writer().writeInt(u8, 42, test_config.endian);
+    try rw.writer().writeInt(u8, 100, test_endian);
+    try rw.writer().writeInt(u8, 101, test_endian);
+    try rw.writer().writeInt(u8, 42, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     try testing.expectEqual(EnumType.a, try reader.readEnum(EnumType));
@@ -337,12 +341,12 @@ test readUnion {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u16, 0, test_config.endian); // enum tag
-    try rw.writer().writeInt(u64, 123, test_config.endian); // enum value
-    try rw.writer().writeInt(u16, 1, test_config.endian); // enum tag, no value
-    try rw.writer().writeInt(u16, 4, test_config.endian); // bad enum tag
+    try rw.writer().writeInt(u16, 0, test_endian); // enum tag
+    try rw.writer().writeInt(u64, 123, test_endian); // enum value
+    try rw.writer().writeInt(u16, 1, test_endian); // enum tag, no value
+    try rw.writer().writeInt(u16, 4, test_endian); // bad enum tag
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     try testing.expectEqual(UnionType{ .a = 123 }, try reader.readUnion(UnionType));
@@ -383,10 +387,10 @@ test "readStruct" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u64, 123, test_config.endian); // a value
-    try rw.writer().writeInt(i40, -44, test_config.endian); // b value
+    try rw.writer().writeInt(u64, 123, test_endian); // a value
+    try rw.writer().writeInt(i40, -44, test_endian); // b value
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     const res = try reader.readStruct(StructT);
@@ -400,10 +404,10 @@ test "readStruct tuple" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u64, 123, test_config.endian); // a value
-    try rw.writer().writeInt(i40, -44, test_config.endian); // b value
+    try rw.writer().writeInt(u64, 123, test_endian); // a value
+    try rw.writer().writeInt(i40, -44, test_endian); // b value
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     const res = try reader.readStruct(TupleType);
@@ -432,7 +436,7 @@ test "struct packed" {
 
     try rw.writer().writeStruct(StructT{ .a = 10, .b = .z });
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     const res = try reader.readStructPacked(StructT);
@@ -459,10 +463,10 @@ test readArray {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u64, 123, test_config.endian); // a value
-    try rw.writer().writeInt(u64, 80, test_config.endian); // b value
+    try rw.writer().writeInt(u64, 123, test_endian); // a value
+    try rw.writer().writeInt(u64, 80, test_endian); // b value
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     const res = try reader.readArray(ArrayType);
@@ -484,11 +488,11 @@ test readSlice {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
-    try rw.writer().writeInt(u16, 123, test_config.endian);
-    try rw.writer().writeInt(u16, 42, test_config.endian);
+    try rw.writer().writeInt(SliceLen, 2, test_endian);
+    try rw.writer().writeInt(u16, 123, test_endian);
+    try rw.writer().writeInt(u16, 42, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     const res = try reader.readSlice(u16);
@@ -523,11 +527,11 @@ test "readArrayListUnmanaged" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
-    try rw.writer().writeInt(u64, 100, test_config.endian);
-    try rw.writer().writeInt(u64, 101, test_config.endian);
+    try rw.writer().writeInt(SliceLen, 2, test_endian);
+    try rw.writer().writeInt(u64, 100, test_endian);
+    try rw.writer().writeInt(u64, 101, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     var res = try reader.readArrayListUnmanaged(u64);
@@ -548,11 +552,11 @@ test "readArrayList" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
-    try rw.writer().writeInt(u64, 100, test_config.endian);
-    try rw.writer().writeInt(u64, 101, test_config.endian);
+    try rw.writer().writeInt(SliceLen, 2, test_endian);
+    try rw.writer().writeInt(u64, 100, test_endian);
+    try rw.writer().writeInt(u64, 101, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     var res = try reader.readArrayList(u64);
@@ -584,10 +588,10 @@ test readString {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(SliceLen, 11, test_config.endian);
+    try rw.writer().writeInt(SliceLen, 11, test_endian);
     _ = try rw.writer().write("hello world");
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     const res = try reader.readString();
@@ -613,9 +617,9 @@ test readPointer {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(u64, 123, test_config.endian);
+    try rw.writer().writeInt(u64, 123, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     const res = try reader.readPointer(*u64);
@@ -657,13 +661,13 @@ test "readHashmapUnmanaged" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
-    try rw.writer().writeInt(u32, 1, test_config.endian);
-    try rw.writer().writeInt(u64, 10, test_config.endian);
-    try rw.writer().writeInt(u32, 2, test_config.endian);
-    try rw.writer().writeInt(u64, 20, test_config.endian);
+    try rw.writer().writeInt(SliceLen, 2, test_endian);
+    try rw.writer().writeInt(u32, 1, test_endian);
+    try rw.writer().writeInt(u64, 10, test_endian);
+    try rw.writer().writeInt(u32, 2, test_endian);
+    try rw.writer().writeInt(u64, 20, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     var res = try reader.readHashMapUnmanaged(u32, u64);
@@ -690,13 +694,13 @@ test "readHashmap" {
     var buff: [100]u8 = undefined;
     var rw = std.io.fixedBufferStream(&buff);
 
-    try rw.writer().writeInt(SliceLen, 2, test_config.endian);
-    try rw.writer().writeInt(u32, 1, test_config.endian);
-    try rw.writer().writeInt(u64, 10, test_config.endian);
-    try rw.writer().writeInt(u32, 2, test_config.endian);
-    try rw.writer().writeInt(u64, 20, test_config.endian);
+    try rw.writer().writeInt(SliceLen, 2, test_endian);
+    try rw.writer().writeInt(u32, 1, test_endian);
+    try rw.writer().writeInt(u64, 10, test_endian);
+    try rw.writer().writeInt(u32, 2, test_endian);
+    try rw.writer().writeInt(u64, 20, test_endian);
 
-    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 }, test_config);
+    var reader = BinReader.init(a, rw.reader().any(), .{ .len = 100 });
 
     try rw.seekTo(0);
     var res = try reader.readHashMap(u32, u64);
