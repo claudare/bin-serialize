@@ -4,7 +4,7 @@ A zig serailization library which allows for simple automatic and custom seriali
 
 The following types are currently supported: Bool, Float, Int, Optional, Enum, Union, Struct, StructPacked, Array, Slice, ArrayList, ArrayListUnmanaged, String, Pointer, AutoHashMap, AutoHashMapUnmanaged.
 
-This library will follow the latest stable version. Currently `0.13.0` is supported.
+This library will follow the latest stable version. Currently `0.14.0` is supported.
 
 # Installation
 

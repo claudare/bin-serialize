@@ -10,7 +10,7 @@ pub fn checkBool(T: type) void {
 
 pub fn checkFloat(T: type) void {
     switch (@typeInfo(T)) {
-        .Float => |info| {
+        .float => |info| {
             _ = info;
             // For now I removed validation of specific float types
             // switch (info.bits) {
@@ -24,7 +24,7 @@ pub fn checkFloat(T: type) void {
 
 pub fn checkInt(comptime T: type) void {
     switch (@typeInfo(T)) {
-        .Int => |info| {
+        .int => |info| {
             if (T == usize or T == isize) {
                 @compileError("dynamic integer type " ++ @typeName(T) ++ " is not supported, use fixed-width integers instead");
             }
@@ -38,14 +38,14 @@ pub fn checkInt(comptime T: type) void {
 }
 pub fn checkOptional(T: type) void {
     switch (@typeInfo(T)) {
-        .Optional => {},
+        .optional => {},
         else => @compileError("type " ++ @typeName(T) ++ " is not an optional"),
     }
 }
 
 pub fn checkEnum(T: type) void {
     switch (@typeInfo(T)) {
-        .Enum => |info| {
+        .@"enum" => |info| {
             // Check if enum has explicit tag type
             // if (info.tag_type == null) {
             //     @compileError("enum " ++ @typeName(T) ++ " must have an explicit integer tag type (e.g., enum(u8))");
@@ -57,7 +57,7 @@ pub fn checkEnum(T: type) void {
             }
 
             // Check if tag type is multiple of 8 bits
-            const tag_info = @typeInfo(info.tag_type).Int;
+            const tag_info = @typeInfo(info.tag_type).int;
             if (tag_info.bits % 8 != 0) {
                 @compileError("enum " ++ @typeName(T) ++ " tag type must have size divisible by 8 bits");
             }
@@ -67,19 +67,19 @@ pub fn checkEnum(T: type) void {
 }
 pub fn checkUnion(T: type) void {
     switch (@typeInfo(T)) {
-        .Union => |info| {
+        .@"union" => |info| {
             // Check if union is tagged
             if (info.tag_type) |TagType| {
                 // Check if tag type is enum
                 switch (@typeInfo(TagType)) {
-                    .Enum => |tag_info| {
+                    .@"enum" => |tag_info| {
                         // Its not possible to check if enum has explicit tag type?
                         // if (tag_info.tag_type) {
                         //     @compileError("union " ++ @typeName(T) ++ " tag enum must have an explicit integer tag type");
                         // }
 
                         // Check if tag type is multiple of 8 bits
-                        const tag_int_info = @typeInfo(tag_info.tag_type).Int;
+                        const tag_int_info = @typeInfo(tag_info.tag_type).int;
                         if (tag_int_info.bits % 8 != 0) {
                             @compileError("union " ++ @typeName(T) ++ " tag type must have size divisible by 8 bits");
                         }
@@ -95,13 +95,13 @@ pub fn checkUnion(T: type) void {
 }
 pub fn checkStruct(T: type) void {
     switch (@typeInfo(T)) {
-        .Struct => {}, // struct allows both packed and unpacked versions
+        .@"struct" => {}, // struct allows both packed and unpacked versions
         else => @compileError("type " ++ @typeName(T) ++ " is not a struct"),
     }
 }
 pub fn checkStructPacked(T: type) void {
     switch (@typeInfo(T)) {
-        .Struct => |info| if (info.layout == .auto) {
+        .@"struct" => |info| if (info.layout == .auto) {
             @compileError("type " ++ @typeName(T) ++ " is not a packed/external struct");
         },
         else => @compileError("type " ++ @typeName(T) ++ " is not a packed/external struct"),
@@ -109,14 +109,14 @@ pub fn checkStructPacked(T: type) void {
 }
 pub fn checkArray(T: type) void {
     switch (@typeInfo(T)) {
-        .Array => {},
+        .array => {},
         else => @compileError("type " ++ @typeName(T) ++ " is not an array"),
     }
 }
 pub fn checkSlice(T: type) void {
     switch (@typeInfo(T)) {
-        .Pointer => |info| switch (info.size) {
-            .Slice => {},
+        .pointer => |info| switch (info.size) {
+            .slice => {},
             else => |size| @compileError("type " ++ @typeName(T) ++ " is not a slice. Wrong size " ++ size),
         },
         else => @compileError("type " ++ @typeName(T) ++ " is not a slice"),
@@ -127,8 +127,8 @@ pub fn checkSlice(T: type) void {
 // what about all other wierd types ([:0]u8), ([*]u8)
 pub fn checkString(T: type) void {
     switch (@typeInfo(T)) {
-        .Pointer => |info| switch (info.size) {
-            .Slice => {
+        .pointer => |info| switch (info.size) {
+            .slice => {
                 if (info.child == u8) {
                     if (info.is_const) {
                         return;
@@ -144,8 +144,8 @@ pub fn checkString(T: type) void {
 }
 pub fn checkPointerSingle(T: type) void {
     switch (@typeInfo(T)) {
-        .Pointer => |info| switch (info.size) {
-            .One => {},
+        .pointer => |info| switch (info.size) {
+            .one => {},
             else => @compileError("type " ++ @typeName(T) ++ " is not a single pointer"),
         },
         else => @compileError("type " ++ @typeName(T) ++ " is not a pointer"),
@@ -156,7 +156,7 @@ pub const KV = struct {
     K: type,
     V: type,
     pub fn infer(comptime T: type) KV {
-        const kv_struct = @typeInfo(T.KV).Struct;
+        const kv_struct = @typeInfo(T.KV).@"struct";
         return .{
             .K = kv_struct.fields[0].type,
             .V = kv_struct.fields[1].type,
@@ -192,34 +192,36 @@ pub const RichType = union(enum) {
 pub fn getRichType(comptime T: type) RichType {
     const type_info = @typeInfo(T);
 
+
+
     // debug.print("type info: {any}\n", .{type_info.});
     // @compileLog("TYPEINFO IS", type_info);
-    switch (type_info) {
-        .Void => {
+    return switch (type_info) {
+        .void => {
             @compileError("void type must never be used");
         },
-        .Bool => return .{ .Bool = {} },
-        .Float, .ComptimeFloat => {
+        .bool =>  return .{ .Bool = {} },
+        .float, .comptime_float => {
             return .{ .Float = T };
         },
-        .Int, .ComptimeInt => {
-            return .{ .Int = T };
+        .int, .comptime_int => .{ .Int = T },
+        .optional => |info| {
+            return .{ .Optional = info.child };
         },
-        .Optional => |info| return .{ .Optional = info.child },
-        .Enum => return .{ .Enum = T },
-        .Union => return .{ .Union = T },
-        .Array => return .{ .Array = T },
-        .Vector => @compileError("type " ++ @typeName(T) ++ " was not implemented yet"),
+        .@"enum" => return .{ .Enum = T },
+        .@"union" => return .{ .Union = T },
+        .array => return .{ .Array = T },
+        .vector => @compileError("type " ++ @typeName(T) ++ " was not implemented yet"),
         // pointer is the only type which is handled here exclusively.
         // this also handles the slices of dynamic size
-        .Pointer => |info| {
+        .pointer => |info| {
             switch (info.size) {
-                .One => {
+                .one => {
                     // is this better for uniformity?
                     // return .{ .PointerSingle = info.child };
                     return .{ .PointerSingle = T };
                 },
-                .Slice => {
+                .slice => {
                     if (info.child == u8) {
                         if (info.is_const) {
                             return .{ .String = {} };
@@ -233,10 +235,10 @@ pub fn getRichType(comptime T: type) RichType {
                 else => @compileError("pointers of size " ++ info.size ++ " are not implemented yet"),
             }
         },
-        .Struct => |info| {
+        .@"struct" => |info| {
             // here complex built in type detection is performed
             if (mem.startsWith(u8, @typeName(T), "array_list")) {
-                const child = @typeInfo(T.Slice).Pointer.child;
+                const child = @typeInfo(T.Slice).pointer.child;
                 if (mem.containsAtLeast(u8, @typeName(T), 1, "Unmanaged")) {
                     return .{ .ArrayListUnmanaged = child };
                 } else {
@@ -261,9 +263,9 @@ pub fn getRichType(comptime T: type) RichType {
                 return .{ .StructPacked = T };
             }
         },
-        .ErrorSet, .ErrorUnion => @compileError("type " ++ @typeName(T) ++ " was not implemented yet"),
+        // .errorSet, .errorUnion => @compileError("type " ++ @typeName(T) ++ " was not implemented yet"),
         else => @compileError("type " ++ @typeName(T) ++ " is not supported"),
-    }
+    };
 }
 
 const testing = std.testing;

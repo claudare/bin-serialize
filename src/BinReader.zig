@@ -166,7 +166,7 @@ test readFloat {
 pub fn readInt(self: *BinReader, comptime T: type) Error!T {
     types.checkInt(T);
 
-    const byte_count = @divExact(@typeInfo(T).Int.bits, 8);
+    const byte_count = @divExact(@typeInfo(T).int.bits, 8);
     var buff: [byte_count]u8 = undefined;
 
     _ = try self.read(&buff);
@@ -219,7 +219,7 @@ pub fn readEnum(self: *BinReader, comptime T: type) Error!T {
         return try T.binRead(self);
     }
 
-    const t_info = @typeInfo(T).Enum;
+    const t_info = @typeInfo(T).@"enum";
     const int_value = try self.readInt(t_info.tag_type);
 
     if (t_info.is_exhaustive) {
@@ -306,10 +306,10 @@ pub fn readUnion(self: *BinReader, comptime T: type) Error!T {
         return T.binRead(self);
     }
 
-    const union_info = @typeInfo(T).Union;
+    const union_info = @typeInfo(T).@"union";
 
     if (union_info.tag_type) |UnionTagType| {
-        const enum_type_info = @typeInfo(UnionTagType).Enum;
+        const enum_type_info = @typeInfo(UnionTagType).@"enum";
         const EnumTagType = enum_type_info.tag_type;
         const read_tag_value = try self.readInt(EnumTagType);
 
@@ -361,7 +361,7 @@ pub fn readStruct(self: *BinReader, comptime T: type) Error!T {
         return T.binRead(self);
     }
 
-    const struct_info = @typeInfo(T).Struct;
+    const struct_info = @typeInfo(T).@"struct";
 
     if (struct_info.is_tuple) {
         var result: T = undefined;
@@ -445,7 +445,7 @@ test "struct packed" {
 }
 
 pub fn readArray(self: *BinReader, comptime T: type) anyerror!T {
-    const arrayInfo = @typeInfo(T).Array;
+    const arrayInfo = @typeInfo(T).array;
 
     var result: T = undefined;
     var i: usize = 0;
@@ -605,7 +605,7 @@ pub fn readPointer(self: *BinReader, comptime T: type) Error!T {
     types.checkPointerSingle(T);
 
     // FIXME: this is broken...
-    const ChildType = @typeInfo(T).Pointer.child;
+    const ChildType = @typeInfo(T).pointer.child;
 
     const result: *ChildType = try self.allocator.create(ChildType);
     result.* = try self.readAny(ChildType);

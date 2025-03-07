@@ -153,7 +153,7 @@ test writeFloat {
 pub fn writeInt(self: *BinWriter, T: type, value: T) Error!void {
     types.checkInt(T);
 
-    var bytes: [@divExact(@typeInfo(T).Int.bits, 8)]u8 = undefined;
+    var bytes: [@divExact(@typeInfo(T).int.bits, 8)]u8 = undefined;
     std.mem.writeInt(std.math.ByteAlignedInt(T), &bytes, value, self.endian);
     _ = try self.write(&bytes);
 }
@@ -204,7 +204,7 @@ pub fn writeEnum(self: *BinWriter, T: type, value: T) Error!void {
         return try value.binWrite(self);
     }
 
-    const tag_type = @typeInfo(T).Enum.tag_type;
+    const tag_type = @typeInfo(T).@"enum".tag_type;
     try self.writeInt(tag_type, @intFromEnum(value));
 }
 
@@ -232,13 +232,13 @@ pub fn writeUnion(self: *BinWriter, T: type, value: T) Error!void {
         return try value.binWrite(self);
     }
 
-    const union_info = @typeInfo(T).Union;
+    const union_info = @typeInfo(T).@"union";
 
     if (union_info.tag_type) |UnionTagType| {
         inline for (union_info.fields) |field| {
             const enum_value = @field(UnionTagType, field.name);
             if (@as(UnionTagType, value) == enum_value) {
-                const EnumTagType = @typeInfo(UnionTagType).Enum.tag_type;
+                const EnumTagType = @typeInfo(UnionTagType).@"enum".tag_type;
                 //@compileLog("EnumTagType IS ", EnumTagType);
                 try self.writeInt(EnumTagType, @intFromEnum(enum_value));
 
@@ -307,7 +307,7 @@ pub fn writeStruct(self: *BinWriter, T: type, value: T) Error!void {
 
     // std.json.stringify(value: anytype, options: StringifyOptions, out_stream: anytype)
     // std.json.innerParse(comptime T: type, allocator: Allocator, source: anytype, options: ParseOptions)
-    const struct_info = @typeInfo(T).Struct;
+    const struct_info = @typeInfo(T).@"struct";
 
     if (struct_info.is_tuple) {
         inline for (0..struct_info.fields.len) |i| {
@@ -378,7 +378,7 @@ test writeStructPacked {
 pub fn writeArray(self: *BinWriter, T: type, value: T) Error!void {
     types.checkArray(T);
 
-    const info = @typeInfo(T).Array;
+    const info = @typeInfo(T).array;
     for (value) |item| {
         try self.writeAny(info.child, item);
     }
@@ -445,7 +445,7 @@ test writeString {
 
 pub fn writePointer(self: *BinWriter, T: type, value: T) Error!void {
     types.checkPointerSingle(T);
-    const ChildType = @typeInfo(T).Pointer.child;
+    const ChildType = @typeInfo(T).pointer.child;
     try self.writeAny(ChildType, value.*);
 }
 

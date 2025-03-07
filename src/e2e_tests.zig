@@ -25,8 +25,8 @@ fn testRoundTrip(test_allocator: std.mem.Allocator, value: anytype) !void {
 
     // special case for slice comparison
     switch (@typeInfo(@TypeOf(value))) {
-        .Pointer => |info| switch (info.size) {
-            .Slice => {
+        .pointer => |info| switch (info.size) {
+            .slice => {
                 try testing.expectEqualSlices(info.child, value, result);
                 return;
             },
