@@ -28,16 +28,22 @@ exe.root_module.addImport("bin-serialize", binser.module("bin-serialize"));
 
 ... TODO...
 
+## Allocator-less serialization
+
+TODO: Figure out how to do this without an actual allocator
+
 ## Custom serialization functions
 
 implement 2 functions:
 ```zig
-pub fn binWrite(self: *const @This(), writer: *BinWriter) BinWriter.WriterError!void {
+pub fn binWrite(self: *const @This(), writer: *BinWriter) BinWriter.Error!void {
+    // allocator can be accessed via writer.allocator
     try writer.writeInt(u8, self.value);
     ...
 }
 
-pub fn binRead(reader: *BinReader) BinReader.ReaderError!@This() {
+pub fn binRead(reader: *BinReader) BinReader.Error!@This() {
+    // allocator can be accessed via reader.allocator
     const value = try reader.readInt(u8)
     ...
     return .{ .value = value };

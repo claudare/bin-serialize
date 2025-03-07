@@ -10,10 +10,7 @@ const testing = std.testing;
 // https://ziggit.dev/t/why-use-import-root/6749
 pub const DefaultSliceLen = u32;
 
-// reader
 pub const BinReader = @import("BinReader.zig");
-
-// writer
 pub const BinWriter = @import("BinWriter.zig");
 
 test {
